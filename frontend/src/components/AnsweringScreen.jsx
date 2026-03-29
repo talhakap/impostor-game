@@ -1,24 +1,22 @@
 import React, { useState, useEffect, useRef } from "react";
 import { socket } from "../socket";
 
-export default function AnsweringScreen({ room, myId, privateData }) {
+export default function AnsweringScreen({ room, myId, privateData, isTiebreaker }) {
   const [answer, setAnswer] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [timeLeft, setTimeLeft] = useState(null);
   const intervalRef = useRef(null);
 
-  const mySubmission = room.submissions?.[myId];
-  const hasSubmitted = submitted || mySubmission === true || typeof mySubmission === "string";
+  const hasSubmitted = submitted || (room.submittedIds || []).includes(myId);
 
-  // Countdown timer
+  useEffect(() => {
+    setAnswer("");
+    setSubmitted(false);
+  }, [room.phase]);
+
   useEffect(() => {
     if (!room.timerEndsAt) return;
-
-    const tick = () => {
-      const left = Math.max(0, Math.ceil((room.timerEndsAt - Date.now()) / 1000));
-      setTimeLeft(left);
-    };
-
+    const tick = () => setTimeLeft(Math.max(0, Math.ceil((room.timerEndsAt - Date.now()) / 1000)));
     tick();
     intervalRef.current = setInterval(tick, 500);
     return () => clearInterval(intervalRef.current);
@@ -32,35 +30,29 @@ export default function AnsweringScreen({ room, myId, privateData }) {
   };
 
   const handleKeyDown = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit();
-    }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSubmit(); }
   };
 
-  const timerClass =
-    timeLeft === null ? "ok"
-    : timeLeft <= 10 ? "urgent"
-    : timeLeft <= 20 ? "warning"
-    : "ok";
-
+  const timerClass = timeLeft === null ? "ok" : timeLeft <= 10 ? "urgent" : timeLeft <= 20 ? "warning" : "ok";
   const players = room.players || [];
-  const submittedCount = players.filter((p) => p.hasSubmitted).length;
+  const submittedCount = (room.submittedIds || []).length;
 
   return (
     <div className="container">
       <div className="card wide">
         <div className="row-between mb">
-          <span className="muted">Round {room.roundNumber} / {room.settings?.totalRounds}</span>
-          {timeLeft !== null && (
-            <span className={`timer ${timerClass}`}>{timeLeft}s</span>
-          )}
+          <span className="muted">
+            {isTiebreaker
+              ? `Tiebreaker #${room.tiebreakerCount}`
+              : `Round ${room.answeringRound} of ${room.settings?.totalRounds}`}
+          </span>
+          {timeLeft !== null && <span className={`timer ${timerClass}`}>{timeLeft}s</span>}
         </div>
 
         {privateData && (
           <div className={`role-card ${privateData.role}`}>
             <div className={`role-label ${privateData.role}`}>
-              {privateData.role === "impostor" ? "You are the Impostor" : "You are a Normal Player"}
+              {privateData.role === "impostor" ? "You are the Impostor" : "You are Crew"}
             </div>
             {privateData.role === "normal" ? (
               <>
@@ -68,8 +60,18 @@ export default function AnsweringScreen({ room, myId, privateData }) {
                 <div className="role-hint">Category: {privateData.category}</div>
               </>
             ) : (
-              <div className="role-word" style={{ fontSize: "1.2rem" }}>Category: {privateData.category}</div>
+              <div className="role-word" style={{ fontSize: "1.3rem" }}>Category: {privateData.category}</div>
             )}
+          </div>
+        )}
+
+        {isTiebreaker && (
+          <div style={{
+            padding: "0.65rem 1rem", borderRadius: "var(--radius-sm)", marginBottom: "1rem",
+            background: "rgba(212,168,71,0.08)", border: "1px solid rgba(212,168,71,0.3)",
+            fontSize: "0.875rem", color: "var(--yellow)",
+          }}>
+            Tiebreaker — give one more answer. Voting will follow for the tied players.
           </div>
         )}
 
@@ -90,20 +92,14 @@ export default function AnsweringScreen({ room, myId, privateData }) {
                 autoFocus
               />
             </div>
-            <button
-              className="btn-primary"
-              onClick={handleSubmit}
-              disabled={!answer.trim()}
-            >
+            <button className="btn-primary" onClick={handleSubmit} disabled={!answer.trim()}>
               Submit Answer
             </button>
           </div>
         ) : (
           <div className="center-text mt" style={{ padding: "1rem 0" }}>
-            <p style={{ color: "var(--green)", fontWeight: 700, marginBottom: "0.5rem" }}>
-              Answer submitted!
-            </p>
-            <p className="muted">Waiting for others... ({submittedCount}/{players.length})</p>
+            <p style={{ color: "var(--green)", fontWeight: 700, marginBottom: "0.5rem" }}>Answer submitted!</p>
+            <p className="muted">Waiting for others... ({submittedCount}/{players.filter(p => !p.isEliminated).length})</p>
           </div>
         )}
 
@@ -111,11 +107,11 @@ export default function AnsweringScreen({ room, myId, privateData }) {
 
         <div className="stack-sm">
           <div className="label">Players</div>
-          {players.map((p) => (
+          {players.filter(p => !p.isEliminated).map((p) => (
             <div className="player-item" key={p.id}>
               <span className="name">{p.name}{p.id === myId ? " (you)" : ""}</span>
-              <span className={`badge ${p.hasSubmitted ? "badge-submitted" : "badge-pending"}`}>
-                {p.hasSubmitted ? "Ready" : "Thinking..."}
+              <span className={`badge ${(room.submittedIds || []).includes(p.id) ? "badge-submitted" : "badge-pending"}`}>
+                {(room.submittedIds || []).includes(p.id) ? "Ready" : "Thinking..."}
               </span>
             </div>
           ))}

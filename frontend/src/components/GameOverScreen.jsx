@@ -6,11 +6,7 @@ export default function GameOverScreen({ room, myId }) {
   const players = room.players || [];
   const results = room.roundResults;
   const winner = results?.winner;
-
-  const crew = players.filter((p) => !results?.impostorIds?.includes(p.id));
-  const impostors = players.filter((p) => results?.impostorIds?.includes(p.id));
-
-  const medals = ["1st", "2nd", "3rd"];
+  const impostorIds = results?.impostorIds || [];
 
   return (
     <div className="container">
@@ -18,10 +14,8 @@ export default function GameOverScreen({ room, myId }) {
 
         {/* Winner banner */}
         <div style={{
-          textAlign: "center",
-          padding: "1.5rem",
-          borderRadius: "var(--radius)",
-          marginBottom: "1.5rem",
+          textAlign: "center", padding: "1.5rem",
+          borderRadius: "var(--radius)", marginBottom: "1.5rem",
           border: `1px solid ${winner === "crew" ? "rgba(106,191,122,0.4)" : "rgba(224,96,96,0.4)"}`,
           background: winner === "crew" ? "var(--green-glow)" : "var(--red-glow)",
         }}>
@@ -37,35 +31,30 @@ export default function GameOverScreen({ room, myId }) {
           </p>
         </div>
 
-        {/* Impostors revealed */}
-        <div style={{
-          padding: "0.9rem 1.25rem",
-          borderRadius: "var(--radius-sm)",
-          marginBottom: "1rem",
-          border: "1px solid rgba(224,96,96,0.3)",
-          background: "var(--red-glow)",
-        }}>
-          <div className="label" style={{ color: "var(--red)", marginBottom: "0.4rem" }}>Impostors</div>
-          <div style={{ fontWeight: 700, fontSize: "1rem" }}>
-            {impostors.length > 0 ? impostors.map((p) => p.name).join(", ") : "None"}
+        {/* The word */}
+        {results?.word && (
+          <div style={{
+            textAlign: "center", padding: "1rem", borderRadius: "var(--radius)",
+            background: "var(--surface2)", border: "1px solid var(--border)", marginBottom: "1rem",
+          }}>
+            <div className="label" style={{ marginBottom: "0.4rem" }}>The Secret Word Was</div>
+            <div style={{ fontFamily: "'Krona One', sans-serif", fontSize: "1.6rem" }}>{results.word}</div>
+            <div className="muted" style={{ marginTop: "0.25rem" }}>Category: {results.category}</div>
           </div>
-        </div>
+        )}
 
-        {/* All players — survival status */}
+        {/* Players with roles revealed */}
         <div className="mb">
           <div className="label">Players</div>
           <div className="stack-sm">
-            {players.map((p, idx) => {
-              const isImpostor = results?.impostorIds?.includes(p.id);
+            {players.map((p) => {
+              const isImpostor = impostorIds.includes(p.id);
               return (
                 <div key={p.id} style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  padding: "0.6rem 0.9rem",
-                  borderRadius: "var(--radius-sm)",
+                  display: "flex", justifyContent: "space-between", alignItems: "center",
+                  padding: "0.6rem 0.9rem", borderRadius: "var(--radius-sm)",
                   background: "var(--surface2)",
-                  border: `1px solid ${p.isEliminated ? "rgba(224,96,96,0.3)" : "var(--border)"}`,
+                  border: `1px solid ${p.isEliminated ? "rgba(224,96,96,0.25)" : "var(--border)"}`,
                 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                     <span style={{ fontWeight: 700 }}>{p.name}</span>
@@ -84,9 +73,9 @@ export default function GameOverScreen({ room, myId }) {
                     <span style={{
                       fontSize: "0.65rem", fontWeight: 700, padding: "0.15rem 0.5rem",
                       borderRadius: "999px", textTransform: "uppercase", letterSpacing: "0.06em",
-                      background: p.isEliminated ? "rgba(224,96,96,0.12)" : "rgba(106,191,122,0.12)",
+                      background: p.isEliminated ? "rgba(224,96,96,0.1)" : "rgba(106,191,122,0.1)",
                       color: p.isEliminated ? "var(--red)" : "var(--green)",
-                      border: `1px solid ${p.isEliminated ? "rgba(224,96,96,0.3)" : "rgba(106,191,122,0.3)"}`,
+                      border: `1px solid ${p.isEliminated ? "rgba(224,96,96,0.25)" : "rgba(106,191,122,0.25)"}`,
                     }}>
                       {p.isEliminated ? "Eliminated" : "Survived"}
                     </span>
