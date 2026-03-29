@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: impostor-game
+    runtime: node
+    rootDir: .
+    buildCommand: npm run build --prefix frontend && npm install --prefix backend
+    startCommand: node backend/index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+    autoDeploy: true
