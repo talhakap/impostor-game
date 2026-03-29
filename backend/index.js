@@ -19,9 +19,9 @@ const io = new Server(server, {
 
 // ─── In-memory state ──────────────────────────────────────────────────────────
 
-const rooms = {}; // roomCode -> Room
-const socketToRoom = {}; // socketId -> roomCode (fast lookup on disconnect)
-const activeTimers = {}; // roomCode -> NodeJS.Timeout
+const rooms = {};
+const socketToRoom = {};
+const activeTimers = {};
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -37,8 +37,17 @@ function getConnectedPlayers(room) {
   return Object.values(room.players).filter((p) => p.isConnected);
 }
 
-// Build the safe room view sent to all clients (no roles, no word)
+// Active = connected AND not eliminated (participates in the game)
+function getActivePlayers(room) {
+  return Object.values(room.players).filter((p) => p.isConnected && !p.isEliminated);
+}
+
 function buildRoomView(room) {
+  const showFullSubmissions =
+    room.phase === "revealing" ||
+    room.phase === "voting" ||
+    room.phase === "round_results";
+
   return {
     code: room.code,
     hostId: room.hostId,
@@ -51,16 +60,15 @@ function buildRoomView(room) {
       name: p.name,
       isHost: p.id === room.hostId,
       isConnected: p.isConnected,
-      score: p.score,
+      isEliminated: p.isEliminated,
       hasSubmitted: room.submissions ? p.id in room.submissions : false,
       hasVoted: room.votes ? p.id in room.votes : false,
     })),
-    submissions: room.phase === "revealing" || room.phase === "voting" || room.phase === "round_results"
+    submissions: showFullSubmissions
       ? room.submissions
       : room.submissions
         ? Object.fromEntries(Object.keys(room.submissions).map((id) => [id, true]))
         : {},
-    votes: room.phase === "round_results" ? room.votes : {},
     roundResults: room.roundResults || null,
   };
 }
@@ -92,24 +100,20 @@ function assignRoles(roomCode) {
   room.votes = {};
   room.roundResults = null;
 
-  const playerIds = Object.keys(room.players).filter(
-    (id) => room.players[id].isConnected
-  );
+  // Only assign roles to active (non-eliminated, connected) players
+  const active = getActivePlayers(room);
+  const activeIds = active.map((p) => p.id);
 
-  // Shuffle player IDs
-  const shuffled = [...playerIds].sort(() => Math.random() - 0.5);
-
-  // Clamp impostorCount to connected player count
-  const impostorCount = Math.min(room.settings.impostorCount, playerIds.length);
+  const shuffled = [...activeIds].sort(() => Math.random() - 0.5);
+  const impostorCount = Math.min(room.settings.impostorCount, activeIds.length - 1);
   const impostors = new Set(shuffled.slice(0, impostorCount));
 
   room.roles = {};
-  playerIds.forEach((id) => {
+  activeIds.forEach((id) => {
     room.roles[id] = impostors.has(id) ? "impostor" : "normal";
   });
 
-  // Send private role data to each player
-  playerIds.forEach((id) => {
+  activeIds.forEach((id) => {
     const role = room.roles[id];
     io.to(id).emit("player:role_assigned", {
       role,
@@ -154,72 +158,61 @@ function tallyVotesAndFinish(roomCode) {
   const room = rooms[roomCode];
   if (!room) return;
 
-  const playerIds = Object.keys(room.players).filter(
-    (id) => room.players[id].isConnected
-  );
+  const active = getActivePlayers(room);
+  const activeIds = active.map((p) => p.id);
 
-  // Count votes
+  // Count votes (only votes targeting active players count)
   const voteCounts = {};
-  playerIds.forEach((id) => {
-    const target = room.votes[id];
-    if (target) voteCounts[target] = (voteCounts[target] || 0) + 1;
+  activeIds.forEach((id) => { voteCounts[id] = 0; });
+  Object.entries(room.votes).forEach(([, targetId]) => {
+    if (voteCounts[targetId] !== undefined) voteCounts[targetId]++;
   });
 
-  // Find most-voted player (tiebreak: random among tied)
-  let maxVotes = 0;
-  Object.values(voteCounts).forEach((c) => { if (c > maxVotes) maxVotes = c; });
-  const topCandidates = Object.keys(voteCounts).filter((id) => voteCounts[id] === maxVotes);
-  const votedOutId = topCandidates[Math.floor(Math.random() * topCandidates.length)] || null;
+  // Determine how many to eliminate (impostorCount, but never eliminate everyone)
+  const N = Math.min(room.settings.impostorCount, activeIds.length - 1);
 
-  // Identify all impostors
-  const impostorIds = playerIds.filter((id) => room.roles[id] === "impostor");
-  const impostorCount = impostorIds.length;
+  // Sort by votes descending
+  const sorted = [...activeIds].sort((a, b) => voteCounts[b] - voteCounts[a]);
 
-  // Scoring:
-  // Normal players: +2 if an impostor was voted out
-  // Impostors: +3 if they were NOT voted out
-  // Bonus: +1 to each normal player who voted for the voted-out impostor
-  const votedOutIsImpostor = votedOutId && room.roles[votedOutId] === "impostor";
-  const pointsAwarded = {};
-
-  playerIds.forEach((id) => {
-    pointsAwarded[id] = 0;
-  });
-
-  if (impostorCount === 0) {
-    // No impostors — everyone gets 1 point for participating
-    playerIds.forEach((id) => { pointsAwarded[id] = 1; });
-  } else if (votedOutIsImpostor) {
-    // Normal players all get 2 pts
-    playerIds.forEach((id) => {
-      if (room.roles[id] === "normal") pointsAwarded[id] += 2;
-    });
-    // Bonus for voters who got it right
-    playerIds.forEach((id) => {
-      if (room.votes[id] === votedOutId && room.roles[id] === "normal") {
-        pointsAwarded[id] += 1;
-      }
-    });
-  } else {
-    // Impostors evaded — they get 3 pts each
-    impostorIds.forEach((id) => { pointsAwarded[id] += 3; });
+  // Pick top N with random tiebreak at the boundary
+  const eliminatedIds = [];
+  if (N > 0) {
+    const nthVotes = voteCounts[sorted[N - 1]];
+    const clearlyAbove = sorted.filter((id) => voteCounts[id] > nthVotes);
+    const tied = sorted.filter((id) => voteCounts[id] === nthVotes);
+    eliminatedIds.push(...clearlyAbove);
+    const needed = N - clearlyAbove.length;
+    const shuffledTied = tied.sort(() => Math.random() - 0.5);
+    eliminatedIds.push(...shuffledTied.slice(0, needed));
   }
 
-  // Apply points to scores
-  playerIds.forEach((id) => {
-    room.players[id].score += pointsAwarded[id];
+  // Mark eliminated
+  eliminatedIds.forEach((id) => {
+    if (room.players[id]) room.players[id].isEliminated = true;
   });
 
+  // Check win conditions among all non-eliminated players
+  const surviving = Object.values(room.players).filter((p) => !p.isEliminated);
+  const survivingImpostors = surviving.filter((p) => room.roles[p.id] === "impostor");
+  const survivingCrew = surviving.filter((p) => room.roles[p.id] === "normal");
+
+  let winner = null;
+  if (survivingImpostors.length === 0) winner = "crew";
+  else if (survivingCrew.length === 0) winner = "impostors";
+
   room.roundResults = {
-    votedOutId,
-    votedOutName: votedOutId ? room.players[votedOutId]?.name : null,
-    votedOutIsImpostor: !!votedOutIsImpostor,
-    impostorIds,
-    impostorNames: impostorIds.map((id) => room.players[id]?.name),
-    pointsAwarded,
-    scores: Object.fromEntries(playerIds.map((id) => [id, room.players[id].score])),
+    voteMap: { ...room.votes },
+    voteCounts,
+    eliminatedIds,
+    eliminatedNames: eliminatedIds.map((id) => room.players[id]?.name),
+    eliminatedRoles: eliminatedIds.map((id) => room.roles[id] || "unknown"),
+    impostorIds: Object.keys(room.roles).filter((id) => room.roles[id] === "impostor"),
+    impostorNames: Object.keys(room.roles)
+      .filter((id) => room.roles[id] === "impostor")
+      .map((id) => room.players[id]?.name),
     word: room.currentWord,
     category: room.currentCategory,
+    winner,
   };
 
   room.phase = "round_results";
@@ -230,16 +223,16 @@ function tallyVotesAndFinish(roomCode) {
 function checkAllSubmitted(roomCode) {
   const room = rooms[roomCode];
   if (!room || room.phase !== "answering") return;
-  const connected = Object.keys(room.players).filter((id) => room.players[id].isConnected);
-  const allIn = connected.every((id) => id in room.submissions);
+  const active = getActivePlayers(room);
+  const allIn = active.every((p) => p.id in room.submissions);
   if (allIn) advanceToRevealing(roomCode);
 }
 
 function checkAllVoted(roomCode) {
   const room = rooms[roomCode];
   if (!room || room.phase !== "voting") return;
-  const connected = Object.keys(room.players).filter((id) => room.players[id].isConnected);
-  const allIn = connected.every((id) => id in room.votes);
+  const active = getActivePlayers(room);
+  const allIn = active.every((p) => p.id in room.votes);
   if (allIn) tallyVotesAndFinish(roomCode);
 }
 
@@ -257,7 +250,7 @@ io.on("connection", (socket) => {
       id: socket.id,
       name: playerName.trim().slice(0, 20),
       isConnected: true,
-      score: 0,
+      isEliminated: false,
     };
 
     rooms[code] = {
@@ -292,13 +285,13 @@ io.on("connection", (socket) => {
 
   // ── room:join ────────────────────────────────────────────────────────────
   socket.on("room:join", ({ code, playerName }, callback) => {
-    const room = rooms[code?.toUpperCase()];
+    const upperCode = code?.toUpperCase();
+    const room = rooms[upperCode];
     if (!room) return callback({ error: "Room not found" });
     if (room.phase !== "lobby") return callback({ error: "Game already in progress" });
     if (Object.keys(room.players).length >= 12) return callback({ error: "Room is full" });
     if (!playerName?.trim()) return callback({ error: "Name required" });
 
-    const upperCode = code.toUpperCase();
     const nameExists = Object.values(room.players).some(
       (p) => p.name.toLowerCase() === playerName.trim().toLowerCase()
     );
@@ -308,7 +301,7 @@ io.on("connection", (socket) => {
       id: socket.id,
       name: playerName.trim().slice(0, 20),
       isConnected: true,
-      score: 0,
+      isEliminated: false,
     };
 
     socketToRoom[socket.id] = upperCode;
@@ -328,7 +321,7 @@ io.on("connection", (socket) => {
     const playerCount = Object.keys(room.players).length;
 
     if (impostorCount !== undefined) {
-      room.settings.impostorCount = Math.max(0, Math.min(Number(impostorCount), playerCount));
+      room.settings.impostorCount = Math.max(1, Math.min(Number(impostorCount), playerCount - 1));
     }
     if (roundDurationSecs !== undefined) {
       room.settings.roundDurationSecs = Math.max(15, Math.min(300, Number(roundDurationSecs)));
@@ -356,7 +349,6 @@ io.on("connection", (socket) => {
     room.phase = "assigning_roles";
     broadcastRoom(code);
 
-    // Brief delay so clients see the transition, then assign roles and start
     setTimeout(() => {
       if (!rooms[code]) return;
       assignRoles(code);
@@ -369,13 +361,14 @@ io.on("connection", (socket) => {
     const code = socketToRoom[socket.id];
     const room = rooms[code];
     if (!room || room.phase !== "answering") return;
-    if (socket.id in room.submissions) return; // already submitted
+    if (room.players[socket.id]?.isEliminated) return;
+    if (socket.id in room.submissions) return;
 
     const trimmed = (answer || "").trim().slice(0, 200);
     if (!trimmed) return;
 
     room.submissions[socket.id] = trimmed;
-    broadcastRoom(code); // updates hasSubmitted flags
+    broadcastRoom(code);
     checkAllSubmitted(code);
   });
 
@@ -392,9 +385,10 @@ io.on("connection", (socket) => {
     const code = socketToRoom[socket.id];
     const room = rooms[code];
     if (!room || room.phase !== "voting") return;
-    if (socket.id in room.votes) return; // already voted
-    if (socket.id === targetId) return; // can't vote for yourself
-    if (!room.players[targetId]) return; // target must exist
+    if (room.players[socket.id]?.isEliminated) return;
+    if (socket.id in room.votes) return;
+    if (socket.id === targetId) return;
+    if (!room.players[targetId] || room.players[targetId].isEliminated) return;
 
     room.votes[socket.id] = targetId;
     broadcastRoom(code);
@@ -407,7 +401,8 @@ io.on("connection", (socket) => {
     const room = rooms[code];
     if (!room || room.hostId !== socket.id || room.phase !== "round_results") return;
 
-    if (room.roundNumber >= room.settings.totalRounds) {
+    // If there was a winner, go to game_over
+    if (room.roundResults?.winner) {
       room.phase = "game_over";
       broadcastRoom(code);
       return;
@@ -415,6 +410,9 @@ io.on("connection", (socket) => {
 
     room.roundNumber += 1;
     room.phase = "assigning_roles";
+    room.submissions = {};
+    room.votes = {};
+    room.roundResults = null;
     broadcastRoom(code);
 
     setTimeout(() => {
@@ -430,8 +428,7 @@ io.on("connection", (socket) => {
     const room = rooms[code];
     if (!room || room.hostId !== socket.id || room.phase !== "game_over") return;
 
-    // Reset scores and round data
-    Object.values(room.players).forEach((p) => { p.score = 0; });
+    Object.values(room.players).forEach((p) => { p.isEliminated = false; });
     room.roundNumber = 0;
     room.phase = "lobby";
     room.roles = {};
@@ -459,7 +456,6 @@ io.on("connection", (socket) => {
 
     const stillConnected = getConnectedPlayers(room);
 
-    // Empty room — clean up
     if (stillConnected.length === 0) {
       clearTimer(code);
       delete rooms[code];
@@ -467,15 +463,14 @@ io.on("connection", (socket) => {
       return;
     }
 
-    // Host left — promote next connected player
     if (room.hostId === socket.id) {
-      room.hostId = stillConnected[0].id;
+      const nextHost = stillConnected.find((p) => !p.isEliminated) || stillConnected[0];
+      room.hostId = nextHost.id;
       console.log(`Host transferred to ${room.hostId} in room ${code}`);
     }
 
     broadcastRoom(code);
 
-    // If everyone remaining has submitted/voted, auto-advance
     if (room.phase === "answering") checkAllSubmitted(code);
     if (room.phase === "voting") checkAllVoted(code);
   });
@@ -483,7 +478,7 @@ io.on("connection", (socket) => {
 
 // ─── Stale room cleanup (every 10 minutes) ───────────────────────────────────
 setInterval(() => {
-  const cutoff = Date.now() - 30 * 60 * 1000; // 30 min
+  const cutoff = Date.now() - 30 * 60 * 1000;
   for (const code of Object.keys(rooms)) {
     if (rooms[code].createdAt < cutoff) {
       clearTimer(code);
