@@ -68,10 +68,7 @@ export default function AnsweringScreen({ room, myId, privateData }) {
                 <div className="role-hint">Category: {privateData.category}</div>
               </>
             ) : (
-              <>
-                <div className="role-word" style={{ fontSize: "1.2rem" }}>Category: {privateData.category}</div>
-                <div className="role-hint">{privateData.hint}</div>
-              </>
+              <div className="role-word" style={{ fontSize: "1.2rem" }}>Category: {privateData.category}</div>
             )}
           </div>
         )}

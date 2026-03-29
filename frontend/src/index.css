@@ -5,27 +5,42 @@
 }
 
 :root {
-  --bg: #0f0f13;
-  --surface: #1a1a24;
-  --surface2: #22222f;
-  --border: #2e2e3e;
-  --text: #e8e8f0;
-  --muted: #7070a0;
-  --accent: #6c63ff;
-  --accent-hover: #5a52e0;
-  --green: #22c55e;
-  --red: #ef4444;
-  --yellow: #f59e0b;
-  --orange: #f97316;
+  --bg: #17181a;
+  --surface: #202123;
+  --surface2: #27292c;
+  --surface3: #2e3033;
+  --border: #333538;
+  --border-bright: #4a4d52;
+  --text: #eee6c1;
+  --muted: #b0a183;
+  --muted-bright: #ccc2a0;
+  --accent: #eee6c1;
+  --accent-hover: #d9d1ad;
+  --accent-glow: rgba(238, 230, 193, 0.1);
+  --green: #6abf7a;
+  --green-glow: rgba(106, 191, 122, 0.12);
+  --red: #e06060;
+  --red-glow: rgba(224, 96, 96, 0.12);
+  --yellow: #d4a847;
+  --yellow-glow: rgba(212, 168, 71, 0.12);
   --radius: 10px;
+  --radius-sm: 7px;
+  --shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.7);
 }
 
 html, body, #root {
   height: 100%;
   background-color: var(--bg);
   color: var(--text);
-  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-family: 'Exo', system-ui, sans-serif;
   font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3 {
+  font-family: 'Krona One', sans-serif;
+  font-weight: 400;
 }
 
 /* ── Layout ─────────────────────────────────────────────── */
@@ -37,6 +52,9 @@ html, body, #root {
   align-items: center;
   justify-content: center;
   padding: 1.5rem 1rem;
+  background:
+    radial-gradient(ellipse 60% 40% at 50% 0%, rgba(238, 230, 193, 0.04) 0%, transparent 70%),
+    var(--bg);
 }
 
 .card {
@@ -46,6 +64,7 @@ html, body, #root {
   padding: 2rem;
   width: 100%;
   max-width: 420px;
+  box-shadow: var(--shadow);
 }
 
 .card.wide {
@@ -58,14 +77,22 @@ html, body, #root {
 
 /* ── Typography ─────────────────────────────────────────── */
 
-h1 { font-size: 2rem; font-weight: 800; margin-bottom: 0.5rem; }
-h2 { font-size: 1.4rem; font-weight: 700; margin-bottom: 0.75rem; }
-h3 { font-size: 1.1rem; font-weight: 600; margin-bottom: 0.5rem; }
+h1 { font-size: 2rem; margin-bottom: 0.4rem; letter-spacing: 0.02em; }
+h2 { font-size: 1.25rem; margin-bottom: 0.75rem; letter-spacing: 0.01em; }
+h3 { font-size: 1rem; margin-bottom: 0.5rem; }
 
-p { line-height: 1.5; }
+p { line-height: 1.6; }
 
 .muted { color: var(--muted); font-size: 0.9rem; }
-.label { font-size: 0.8rem; font-weight: 600; letter-spacing: 0.05em; color: var(--muted); text-transform: uppercase; margin-bottom: 0.4rem; }
+.label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-bottom: 0.5rem;
+  font-family: 'Exo', sans-serif;
+}
 
 .error-text { color: var(--red); font-size: 0.9rem; margin-top: 0.5rem; }
 
@@ -73,84 +100,101 @@ p { line-height: 1.5; }
 
 input, textarea, select {
   width: 100%;
-  padding: 0.7rem 0.9rem;
+  padding: 0.75rem 1rem;
   background: var(--surface2);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: var(--text);
   font-size: 1rem;
-  font-family: inherit;
+  font-family: 'Exo', sans-serif;
   outline: none;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 
 input:focus, textarea:focus, select:focus {
-  border-color: var(--accent);
+  border-color: var(--muted);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+input::placeholder, textarea::placeholder {
+  color: var(--border-bright);
 }
 
 textarea {
   resize: vertical;
-  min-height: 80px;
+  min-height: 90px;
+  line-height: 1.5;
 }
 
 /* ── Buttons ────────────────────────────────────────────── */
 
 button {
   cursor: pointer;
-  font-family: inherit;
-  font-size: 1rem;
-  border-radius: 6px;
+  font-family: 'Exo', sans-serif;
+  font-size: 0.95rem;
+  font-weight: 700;
+  border-radius: var(--radius-sm);
   border: none;
-  padding: 0.7rem 1.2rem;
-  transition: background-color 0.15s, opacity 0.15s;
+  padding: 0.75rem 1.25rem;
+  transition: background-color 0.15s, opacity 0.15s, box-shadow 0.15s, transform 0.1s;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 button:disabled {
-  opacity: 0.45;
+  opacity: 0.35;
   cursor: not-allowed;
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.98);
 }
 
 .btn-primary {
   background: var(--accent);
-  color: #fff;
+  color: var(--surface);
   width: 100%;
-  font-weight: 600;
+  box-shadow: 0 2px 12px rgba(238, 230, 193, 0.15);
 }
 
 .btn-primary:hover:not(:disabled) {
   background: var(--accent-hover);
+  box-shadow: 0 4px 20px rgba(238, 230, 193, 0.25);
 }
 
 .btn-success {
   background: var(--green);
-  color: #fff;
+  color: var(--surface);
   width: 100%;
-  font-weight: 600;
+  box-shadow: 0 2px 12px var(--green-glow);
 }
 
 .btn-success:hover:not(:disabled) {
-  background: #16a34a;
+  background: #58a868;
+  box-shadow: 0 4px 20px var(--green-glow);
 }
 
 .btn-danger {
   background: var(--red);
   color: #fff;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .btn-danger:hover:not(:disabled) {
-  background: #dc2626;
+  background: #c85050;
 }
 
 .btn-ghost {
   background: transparent;
   color: var(--muted);
   border: 1px solid var(--border);
+  text-transform: uppercase;
 }
 
 .btn-ghost:hover:not(:disabled) {
   background: var(--surface2);
-  color: var(--text);
+  color: var(--muted-bright);
+  border-color: var(--border-bright);
 }
 
 /* ── Stack / spacing helpers ────────────────────────────── */
@@ -165,59 +209,97 @@ button:disabled {
 .mb-sm { margin-bottom: 0.5rem; }
 .mb { margin-bottom: 1rem; }
 
+/* ── Badges ─────────────────────────────────────────────── */
+
+.badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  font-family: 'Exo', sans-serif;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.badge-host { background: var(--muted); color: var(--surface); }
+.badge-you { background: var(--surface3); border: 1px solid var(--border-bright); color: var(--muted); }
+.badge-submitted { background: var(--green); color: var(--surface); }
+.badge-pending { background: var(--surface3); border: 1px solid var(--border); color: var(--muted); }
+
 /* ── Player list items ──────────────────────────────────── */
 
 .player-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.6rem 0.9rem;
+  padding: 0.65rem 1rem;
   background: var(--surface2);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   gap: 0.5rem;
+  transition: border-color 0.15s;
 }
 
-.player-item .name { font-weight: 600; }
-.player-item .badge { font-size: 0.75rem; padding: 0.2rem 0.5rem; border-radius: 999px; }
-.badge-host { background: var(--accent); color: #fff; }
-.badge-you { background: var(--surface); border: 1px solid var(--border); color: var(--muted); }
-.badge-submitted { background: var(--green); color: #fff; }
-.badge-pending { background: var(--surface); border: 1px solid var(--border); color: var(--muted); }
+.player-item:hover {
+  border-color: var(--border-bright);
+}
+
+.player-item .name { font-weight: 600; font-size: 0.95rem; }
 
 /* ── Role card ──────────────────────────────────────────── */
 
 .role-card {
   border-radius: var(--radius);
-  padding: 1.5rem;
+  padding: 1.75rem;
   text-align: center;
-  margin-bottom: 1rem;
+  margin-bottom: 1.25rem;
 }
 
 .role-card.normal {
-  background: linear-gradient(135deg, #1a2e1a, #1e3a1e);
-  border: 1px solid var(--green);
+  background: linear-gradient(135deg, #1a1f1a, #1e2620);
+  border: 1px solid rgba(106, 191, 122, 0.35);
+  box-shadow: 0 0 30px rgba(106, 191, 122, 0.06);
 }
 
 .role-card.impostor {
-  background: linear-gradient(135deg, #2e1a1a, #3a1e1e);
-  border: 1px solid var(--red);
+  background: linear-gradient(135deg, #1f1a1a, #261e1e);
+  border: 1px solid rgba(224, 96, 96, 0.35);
+  box-shadow: 0 0 30px rgba(224, 96, 96, 0.06);
 }
 
-.role-label { font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.5rem; }
+.role-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  font-family: 'Exo', sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  margin-bottom: 0.75rem;
+}
 .role-label.normal { color: var(--green); }
 .role-label.impostor { color: var(--red); }
 
-.role-word { font-size: 2rem; font-weight: 800; margin: 0.5rem 0; }
-.role-hint { font-size: 0.9rem; color: var(--muted); font-style: italic; }
+.role-word {
+  font-family: 'Krona One', sans-serif;
+  font-size: 2rem;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  margin: 0.25rem 0;
+  line-height: 1.2;
+  color: var(--text);
+}
+
+.role-hint { font-size: 0.875rem; color: var(--muted); margin-top: 0.4rem; }
 
 /* ── Timer ──────────────────────────────────────────────── */
 
 .timer {
-  font-size: 2.5rem;
+  font-family: 'Exo', sans-serif;
+  font-size: 2rem;
   font-weight: 800;
   text-align: center;
   font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  line-height: 1;
 }
 
 .timer.urgent { color: var(--red); }
@@ -235,12 +317,25 @@ button:disabled {
 .answer-card {
   background: var(--surface2);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 1rem;
+  border-radius: var(--radius-sm);
+  padding: 1rem 1.1rem;
+  transition: border-color 0.15s;
 }
 
-.answer-card .answer-name { font-size: 0.8rem; color: var(--muted); margin-bottom: 0.3rem; }
-.answer-card .answer-text { font-size: 1rem; font-weight: 600; word-break: break-word; }
+.answer-card:hover {
+  border-color: var(--border-bright);
+}
+
+.answer-card .answer-name {
+  font-size: 0.68rem;
+  font-weight: 700;
+  font-family: 'Exo', sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin-bottom: 0.4rem;
+}
+.answer-card .answer-text { font-size: 1rem; font-weight: 600; word-break: break-word; line-height: 1.4; }
 
 /* ── Vote target cards ──────────────────────────────────── */
 
@@ -254,29 +349,30 @@ button:disabled {
   background: var(--surface2);
   border: 2px solid var(--border);
   border-radius: var(--radius);
-  padding: 1rem;
+  padding: 1.1rem 0.75rem;
   cursor: pointer;
   text-align: center;
-  transition: border-color 0.15s, background 0.15s;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
 }
 
-.vote-card:hover:not(:disabled):not(.self) {
-  border-color: var(--accent);
-  background: var(--surface);
+.vote-card:hover:not(.self):not(.voted) {
+  border-color: var(--muted);
+  background: var(--surface3);
 }
 
 .vote-card.selected {
   border-color: var(--accent);
-  background: rgba(108, 99, 255, 0.1);
+  background: rgba(238, 230, 193, 0.06);
+  box-shadow: 0 0 16px var(--accent-glow);
 }
 
 .vote-card.self {
-  opacity: 0.35;
+  opacity: 0.25;
   cursor: not-allowed;
 }
 
-.vote-card .vote-name { font-weight: 700; font-size: 1rem; }
-.vote-card .vote-sub { font-size: 0.8rem; color: var(--muted); margin-top: 0.2rem; }
+.vote-card .vote-name { font-weight: 700; font-size: 0.95rem; }
+.vote-card .vote-sub { font-size: 0.78rem; color: var(--muted); margin-top: 0.3rem; }
 
 /* ── Results ────────────────────────────────────────────── */
 
@@ -284,30 +380,35 @@ button:disabled {
   border-radius: var(--radius);
   padding: 1rem 1.5rem;
   margin-bottom: 1rem;
-  border: 1px solid var(--red);
-  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(224, 96, 96, 0.3);
+  background: var(--red-glow);
 }
 
 .score-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.5rem 0.75rem;
-  border-radius: 6px;
+  padding: 0.6rem 0.9rem;
+  border-radius: var(--radius-sm);
   background: var(--surface2);
   border: 1px solid var(--border);
+  transition: border-color 0.15s;
 }
 
-.score-row.top { border-color: var(--yellow); background: rgba(245, 158, 11, 0.08); }
-.score-delta { color: var(--green); font-weight: 700; font-size: 0.9rem; }
+.score-row.top {
+  border-color: rgba(212, 168, 71, 0.4);
+  background: var(--yellow-glow);
+}
+
+.score-delta { color: var(--green); font-weight: 700; font-size: 0.875rem; }
 
 /* ── Spinner ────────────────────────────────────────────── */
 
 .spinner {
-  width: 36px;
-  height: 36px;
-  border: 3px solid var(--border);
-  border-top-color: var(--accent);
+  width: 32px;
+  height: 32px;
+  border: 2.5px solid var(--border);
+  border-top-color: var(--muted);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
   margin: 1rem auto 0;
@@ -320,17 +421,24 @@ button:disabled {
 /* ── Room code badge ────────────────────────────────────── */
 
 .room-code {
-  font-size: 1.8rem;
-  font-weight: 900;
-  letter-spacing: 0.2em;
-  color: var(--accent);
+  font-family: 'Krona One', sans-serif;
+  font-size: 1.7rem;
+  font-weight: 400;
+  letter-spacing: 0.3em;
+  color: var(--text);
   text-align: center;
-  padding: 0.5rem;
+  padding: 0.75rem 1rem;
   background: var(--surface2);
-  border: 1px dashed var(--border);
-  border-radius: 6px;
+  border: 1px dashed var(--border-bright);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   user-select: all;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.room-code:hover {
+  border-color: var(--muted);
+  background: var(--surface3);
 }
 
 /* ── Settings row ───────────────────────────────────────── */
@@ -339,18 +447,18 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.75rem 0;
+  padding: 0.8rem 0;
   border-bottom: 1px solid var(--border);
   gap: 1rem;
 }
 
 .settings-row:last-child { border-bottom: none; }
-
-.settings-row .setting-label { font-size: 0.9rem; white-space: nowrap; }
+.settings-row .setting-label { font-size: 0.9rem; font-weight: 500; white-space: nowrap; }
 
 .settings-row input[type="number"] {
   width: 80px;
   text-align: center;
+  padding: 0.5rem;
 }
 
 /* ── Divider ────────────────────────────────────────────── */
@@ -358,13 +466,15 @@ button:disabled {
 .divider {
   border: none;
   border-top: 1px solid var(--border);
-  margin: 1rem 0;
+  margin: 1.25rem 0;
 }
 
 /* ── Responsive ─────────────────────────────────────────── */
 
 @media (max-width: 480px) {
   .card { padding: 1.25rem; }
+  h1 { font-size: 1.6rem; }
   .answer-grid { grid-template-columns: 1fr; }
   .vote-grid { grid-template-columns: 1fr 1fr; }
+  .role-word { font-size: 1.6rem; }
 }

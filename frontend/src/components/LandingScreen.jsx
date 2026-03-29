@@ -45,8 +45,8 @@ export default function LandingScreen({ error, clearError }) {
     <div className="container">
       <div className="card">
         <div className="center-text mb">
-          <h1 style={{ color: "var(--accent)" }}>Impostor</h1>
-          <p className="muted">Social deduction word game</p>
+          <h1 style={{ color: "var(--text)" }}>Impostor</h1>
+          <p className="muted" style={{ fontSize: "0.95rem", marginTop: "0.25rem" }}>Social deduction word game</p>
         </div>
 
         <div className="stack">
