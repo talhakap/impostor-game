@@ -7,17 +7,27 @@ export default function VotingScreen({ room, myId, isTiebreaker }) {
 
   const players = room.players || [];
   const me = players.find((p) => p.id === myId);
-  const hasVoted = voted || !!(room.roundResults ? false : players.find(p => p.id === myId)?.hasVoted);
+  const hasVoted = voted || !!me?.hasVoted;
   const isEliminated = me?.isEliminated;
+  const allSubmissions = room.allSubmissions || {};
 
-  // In tiebreaker: only tied players are vote targets
-  // In regular: all active, non-eliminated players
   const voteTargets = isTiebreaker
     ? players.filter((p) => (room.tiedPlayerIds || []).includes(p.id))
     : players.filter((p) => !p.isEliminated && p.isConnected);
 
+  const activePlayers = players.filter((p) => !p.isEliminated);
   const votedCount = players.filter((p) => p.hasVoted && !p.isEliminated).length;
   const activeCount = players.filter((p) => !p.isEliminated && p.isConnected).length;
+
+  // Round keys to display (regular rounds, or tiebreaker round)
+  const roundKeys = isTiebreaker
+    ? [`tb_${room.tiebreakerCount}`]
+    : Object.keys(allSubmissions)
+        .filter((k) => k.startsWith("round_"))
+        .sort((a, b) => Number(a.split("_")[1]) - Number(b.split("_")[1]));
+
+  const roundLabel = (key) =>
+    key.startsWith("tb_") ? `Tiebreaker #${key.split("_")[1]}` : `Round ${key.split("_")[1]}`;
 
   const handleVote = () => {
     if (!selectedId || hasVoted || isEliminated) return;
@@ -40,6 +50,28 @@ export default function VotingScreen({ room, myId, isTiebreaker }) {
                   : `Vote for who you think is faking it.${room.settings?.impostorCount > 1 ? ` Top ${room.settings.impostorCount} most-voted will be eliminated.` : ""}`}
           </p>
         </div>
+
+        {/* All answers for reference */}
+        {roundKeys.map((key) => {
+          const roundData = allSubmissions[key] || {};
+          return (
+            <div key={key} className="mb">
+              <div className="label">{roundLabel(key)} Answers</div>
+              <div className="answer-grid">
+                {activePlayers.map((p) => (
+                  <div className="answer-card" key={p.id}>
+                    <div className="answer-name">{p.name}{p.id === myId ? " (you)" : ""}</div>
+                    <div className="answer-text">
+                      {roundData[p.id] || <span style={{ color: "var(--muted)", fontStyle: "italic" }}>No answer</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+
+        <hr className="divider" />
 
         {isTiebreaker && (
           <div style={{

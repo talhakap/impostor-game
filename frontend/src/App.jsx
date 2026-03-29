@@ -4,7 +4,7 @@ import LandingScreen from "./components/LandingScreen";
 import LobbyScreen from "./components/LobbyScreen";
 import AnsweringScreen from "./components/AnsweringScreen";
 import RoundCompleteScreen from "./components/RoundCompleteScreen";
-import RevealScreen from "./components/RevealScreen";
+import TiebreakerRevealScreen from "./components/TiebreakerRevealScreen";
 import VotingScreen from "./components/VotingScreen";
 import RoundResultsScreen from "./components/RoundResultsScreen";
 import GameOverScreen from "./components/GameOverScreen";
@@ -69,10 +69,6 @@ export default function App() {
     return <RoundCompleteScreen room={room} myId={myId} />;
   }
 
-  if (phase === "revealing") {
-    return <RevealScreen room={room} myId={myId} />;
-  }
-
   if (phase === "voting") {
     return <VotingScreen room={room} myId={myId} />;
   }
@@ -82,7 +78,7 @@ export default function App() {
   }
 
   if (phase === "tiebreaker_revealing") {
-    return <RevealScreen room={room} myId={myId} isTiebreaker />;
+    return <TiebreakerRevealScreen room={room} myId={myId} />;
   }
 
   if (phase === "tiebreaker_voting") {

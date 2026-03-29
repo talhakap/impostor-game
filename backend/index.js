@@ -47,7 +47,7 @@ function clearTimer(roomCode) {
 
 // Phases where all accumulated answers are visible to clients
 const REVEAL_PHASES = new Set([
-  "revealing", "voting",
+  "round_complete", "revealing", "voting",
   "tiebreaker_answering", "tiebreaker_revealing", "tiebreaker_voting",
   "round_results", "game_over",
 ]);
@@ -233,16 +233,19 @@ function tallyVotesAndFinish(roomCode) {
     }
 
     const sorted = [...candidates].sort((a, b) => voteCounts[b] - voteCounts[a]);
-    const nthVotes = voteCounts[sorted[N - 1]];
-    const clearlyAbove = sorted.filter((id) => voteCounts[id] > nthVotes);
-    const atBoundary = sorted.filter((id) => voteCounts[id] === nthVotes);
 
-    if (clearlyAbove.length === N) {
-      // Clean result, no tie
-      finalizeEliminations(roomCode, clearlyAbove, voteCounts, room.votes);
+    // Tie exists only if the Nth and (N+1)th players share the same vote count
+    const nthVotes = voteCounts[sorted[N - 1]];
+    const nextVotes = sorted.length > N ? voteCounts[sorted[N]] : -1;
+
+    if (nthVotes === nextVotes) {
+      // Tie at the boundary — tiebreaker needed
+      const aboveBoundary = sorted.filter((id) => voteCounts[id] > nthVotes);
+      const atBoundary = sorted.filter((id) => voteCounts[id] === nthVotes);
+      startTiebreaker(roomCode, aboveBoundary, atBoundary);
     } else {
-      // Tie at the boundary
-      startTiebreaker(roomCode, clearlyAbove, atBoundary);
+      // Clean result
+      finalizeEliminations(roomCode, sorted.slice(0, N), voteCounts, room.votes);
     }
   } else {
     // Tiebreaker voting — pick 1 from tiedPlayerIds
@@ -375,7 +378,9 @@ io.on("connection", (socket) => {
     const room = rooms[code];
     if (!room || room.hostId !== socket.id || room.phase !== "round_complete") return;
     if (room.answeringRound >= room.settings.totalRounds) {
-      room.phase = "revealing";
+      // All rounds done — go straight to voting
+      room.votes = {};
+      room.phase = "voting";
       broadcastRoom(code);
     } else {
       room.answeringRound++;
