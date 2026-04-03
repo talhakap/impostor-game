@@ -1,4 +1,8 @@
 import React from "react";
+import UnoCard from "./UnoCard";
+
+// Dummy card object — only used to render the face-down back
+const BACK_CARD = { id: "__back__", color: "wild", type: "wild", value: null };
 
 export default function UnoDrawPile({ count, onDraw, isMyTurn }) {
   return (
@@ -14,48 +18,39 @@ export default function UnoDrawPile({ count, onDraw, isMyTurn }) {
         Draw Pile
       </div>
 
+      {/* Wrapper adds the lift / glow when it's your turn */}
       <div
         onClick={isMyTurn ? onDraw : undefined}
         style={{
-          width: 64, height: 96,
-          borderRadius: 10,
-          background: "linear-gradient(135deg, #1F2937, #111827)",
-          border: isMyTurn
-            ? "2px solid rgba(238,230,193,0.55)"
-            : "2px solid rgba(255,255,255,0.1)",
-          display: "flex", flexDirection: "column",
-          alignItems: "center", justifyContent: "center",
           cursor: isMyTurn ? "pointer" : "default",
-          boxShadow: isMyTurn
-            ? "0 0 18px rgba(238,230,193,0.18)"
-            : "0 2px 8px rgba(0,0,0,0.45)",
-          transform: isMyTurn ? "translateY(-8px)" : "none",
-          transition: "transform 0.12s, box-shadow 0.15s, border-color 0.15s",
-          userSelect: "none",
-          gap: "4px",
+          transform: isMyTurn ? "translateY(-10px)" : "none",
+          transition: "transform 0.12s",
+          position: "relative",
         }}
       >
-        <span style={{
-          color: "rgba(255,255,255,0.85)",
-          fontSize: "0.8rem",
-          fontWeight: 900,
-          fontFamily: "'Krona One', sans-serif",
-          letterSpacing: "0.04em",
-        }}>
-          UNO
-        </span>
-        <span style={{
-          color: "rgba(255,255,255,0.4)",
-          fontSize: "0.65rem",
+        <UnoCard card={BACK_CARD} faceDown playable={isMyTurn ? true : undefined} />
+        {/* Card count badge */}
+        <div style={{
+          position: "absolute",
+          bottom: -8, left: "50%",
+          transform: "translateX(-50%)",
+          background: "var(--surface3)",
+          border: "1px solid var(--border)",
+          borderRadius: 999,
+          fontSize: "0.6rem",
           fontWeight: 700,
           fontFamily: "'Exo', sans-serif",
+          color: "var(--muted)",
+          padding: "1px 7px",
+          whiteSpace: "nowrap",
         }}>
           {count}
-        </span>
+        </div>
       </div>
 
       {isMyTurn && (
         <div style={{
+          marginTop: "0.6rem",
           fontSize: "0.58rem", color: "var(--muted)",
           textAlign: "center", letterSpacing: "0.07em",
           textTransform: "uppercase",
