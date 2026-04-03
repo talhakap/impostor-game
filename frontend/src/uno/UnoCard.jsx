@@ -132,15 +132,16 @@ export default function UnoCard({ card, onClick, playable, selected, small, face
           transform: "rotate(-25deg)",
           pointerEvents: "none",
         }} />
-        {/* Logo */}
+        {/* Logo — shown as-is; dark logo bg matches dark card bg, cream symbol is visible */}
         <img
           src="/logo.png"
           alt=""
           draggable={false}
           style={{
-            width: `${S * 34}px`,
-            opacity: 0.9,
-            filter: "brightness(0) invert(1)",
+            width: `${S * 36}px`,
+            opacity: 1,
+            position: "relative",
+            zIndex: 1,
             pointerEvents: "none",
           }}
         />
@@ -234,24 +235,26 @@ export default function UnoCard({ card, onClick, playable, selected, small, face
           }}>
             {centerLabel}
           </span>
-          {/* Logo watermark inside oval */}
-          <img
-            src="/logo.png"
-            alt=""
-            draggable={false}
-            style={{
-              position: "absolute",
-              width: `${S * 18}px`,
-              bottom: `${S * 5}px`,
-              right: `${S * 7}px`,
-              opacity: 0.18,
-              filter: `brightness(0) saturate(0)`,
-              transform: "rotate(20deg)",
-              pointerEvents: "none",
-            }}
-          />
         </div>
       )}
+
+      {/* ── Logo — bottom centre, blends over solid card colour ─────────── */}
+      <img
+        src="/logo.png"
+        alt=""
+        draggable={false}
+        style={{
+          position: "absolute",
+          bottom: S * 5,
+          left: "50%",
+          transform: "translateX(-50%)",
+          width: `${S * 20}px`,
+          opacity: 0.55,
+          mixBlendMode: "screen",
+          pointerEvents: "none",
+          zIndex: 3,
+        }}
+      />
 
       {/* ── Bottom-right corner (rotated 180°) ───────────────────────────── */}
       <div style={{

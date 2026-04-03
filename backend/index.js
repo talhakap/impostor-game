@@ -24,7 +24,7 @@ const activeTimers   = {};
 // Grace period timers: socketId → setTimeout handle.
 // When a player disconnects we wait GRACE_MS before treating it as permanent.
 const disconnectTimers = {};
-const GRACE_MS = 20_000; // 20 seconds
+const GRACE_MS = 60_000; // 60 seconds — covers mobile tab suspension
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
