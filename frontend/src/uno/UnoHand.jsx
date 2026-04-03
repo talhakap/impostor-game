@@ -1,9 +1,18 @@
 import React from "react";
 import UnoCard from "./UnoCard";
 
-// Mirrors the server-side isValidPlay for UI hints only.
-// The server always re-validates; this is purely cosmetic (lift / dim cards).
-function isCardPlayable(card, topCard, currentColor, pendingDrawCount) {
+// Client-side playability mirror — cosmetic only.
+// The server always re-validates before accepting a play.
+function isCardPlayable(card, topCard, currentColor, pendingDrawCount, drawnCardId, chainValue) {
+  // If a card was drawn this turn, only that card is playable
+  if (drawnCardId) return card.id === drawnCardId;
+
+  // If in same-value chain mode, only matching numbers or wilds are playable
+  if (chainValue !== null) {
+    return card.color === "wild" || (card.type === "number" && card.value === chainValue);
+  }
+
+  // Normal rules
   if (pendingDrawCount > 0) return false;
   if (card.color === "wild") return true;
   if (card.color === currentColor) return true;
@@ -18,6 +27,8 @@ export default function UnoHand({
   topCard,
   currentColor,
   pendingDrawCount,
+  drawnCardId,
+  chainValue,
   onPlayCard,
 }) {
   if (!hand || hand.length === 0) {
@@ -44,7 +55,7 @@ export default function UnoHand({
     }}>
       {hand.map((card) => {
         const playable = isMyTurn
-          ? isCardPlayable(card, topCard, currentColor, pendingDrawCount)
+          ? isCardPlayable(card, topCard, currentColor, pendingDrawCount, drawnCardId, chainValue)
           : false;
 
         return (

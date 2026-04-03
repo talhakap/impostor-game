@@ -99,6 +99,8 @@ function dealCards(room) {
   room.pendingDrawCount = 0;
   room.saidUno          = {};
   room.roundWinnerId    = null;
+  room.drawnCardId      = null; // id of card drawn this turn (null = no draw yet)
+  room.chainValue       = null; // value being chained (null = not chaining)
 
   for (const pid of room.turnOrder) {
     room.saidUno[pid] = false;
@@ -230,6 +232,9 @@ function buildUnoView(room, requestingPlayerId) {
     scores:             room.scores ?? {},
     roundWinnerId:      room.roundWinnerId ?? null,
     gameWinnerId:       room.gameWinnerId ?? null,
+    // Draw & chain state — used by the client to restrict playable cards
+    drawnCardId:        room.drawnCardId ?? null,
+    chainValue:         room.chainValue  ?? null,
   };
 }
 

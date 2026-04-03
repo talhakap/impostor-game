@@ -329,6 +329,8 @@ io.on("connection", (socket) => {
         saidUno:          {},
         roundWinnerId:    null,
         gameWinnerId:     null,
+        drawnCardId:      null,
+        chainValue:       null,
       };
     } else {
       rooms[code] = {
@@ -568,8 +570,21 @@ io.on("connection", (socket) => {
     const card    = hand[cardIdx];
     const topCard = room.discardPile[room.discardPile.length - 1];
 
-    if (!uno.isValidPlay(card, topCard, room.currentColor, room.pendingDrawCount))
-      return socket.emit("error", { message: "That card cannot be played right now" });
+    // If a card was drawn this turn, only that card may be played
+    if (room.drawnCardId && cardId !== room.drawnCardId)
+      return socket.emit("error", { message: "You must play the drawn card or pass your turn" });
+
+    // If in chain mode, only same-value number cards or wilds are allowed
+    if (room.chainValue !== null) {
+      const isChainable = card.color === "wild" ||
+        (card.type === "number" && card.value === room.chainValue);
+      if (!isChainable)
+        return socket.emit("error", { message: "End your turn or play a matching number" });
+    } else {
+      // Normal validation (not in chain mode)
+      if (!uno.isValidPlay(card, topCard, room.currentColor, room.pendingDrawCount))
+        return socket.emit("error", { message: "That card cannot be played right now" });
+    }
 
     if (card.type === "wild" || card.type === "wild_draw_four") {
       if (!["red", "green", "blue", "yellow"].includes(chosenColor))
@@ -579,12 +594,13 @@ io.on("connection", (socket) => {
     // Remove from hand, place on discard pile
     hand.splice(cardIdx, 1);
     room.discardPile.push(card);
+    room.drawnCardId = null;
 
-    // Reset UNO call unless hand is exactly 1 (player should call UNO themselves)
     if (hand.length !== 1) room.saidUno[socket.id] = false;
 
-    // Check win condition before applying effect
+    // Win condition
     if (hand.length === 0) {
+      room.chainValue = null;
       room.roundWinnerId = socket.id;
       const otherHands = {};
       for (const pid of room.turnOrder) {
@@ -596,11 +612,28 @@ io.on("connection", (socket) => {
       return;
     }
 
+    // ── Same-value chain logic ────────────────────────────────────────────
+    // After playing a number card, if the player still holds cards of the
+    // same value they stay on their turn and can chain them.
+    if (card.type === "number") {
+      const hasMoreSameValue = hand.some((c) => c.type === "number" && c.value === card.value);
+      if (hasMoreSameValue) {
+        room.chainValue   = card.value;
+        room.currentColor = card.color; // update active colour without advancing turn
+        broadcastRoom(code);
+        return;
+      }
+    }
+
+    // No chain continuation: clear chain state and apply normal card effect
+    room.chainValue = null;
     uno.applyCardEffect(room, card, chosenColor);
     broadcastRoom(code);
   });
 
   // ── UNO: draw a card ───────────────────────────────────────────────────────
+  // Draw one card. If it's immediately playable, stay on this player's turn
+  // so they can play it. If it's not playable, auto-advance the turn.
 
   socket.on("uno:draw_card", () => {
     const code = socketToRoom[socket.id];
@@ -610,8 +643,45 @@ io.on("connection", (socket) => {
     if (uno.getCurrentPlayerId(room) !== socket.id)
       return socket.emit("error", { message: "It's not your turn" });
 
+    // Cannot draw while already holding a drawn card or mid-chain
+    if (room.drawnCardId)
+      return socket.emit("error", { message: "Play the drawn card or pass your turn" });
+    if (room.chainValue !== null)
+      return socket.emit("error", { message: "End your turn or play a matching number" });
+
     uno.drawCards(room, socket.id, 1);
     room.saidUno[socket.id] = false;
+
+    const drawnCard = room.hands[socket.id][room.hands[socket.id].length - 1];
+    const topCard   = room.discardPile[room.discardPile.length - 1];
+
+    if (uno.isValidPlay(drawnCard, topCard, room.currentColor, room.pendingDrawCount)) {
+      // Playable — stay on turn, highlight this card only
+      room.drawnCardId = drawnCard.id;
+    } else {
+      // Not playable — auto-advance
+      room.drawnCardId = null;
+      uno.advanceTurn(room, 1);
+    }
+    broadcastRoom(code);
+  });
+
+  // ── UNO: pass turn ─────────────────────────────────────────────────────────
+  // Used after drawing an unplayable card OR to end a same-value chain early.
+
+  socket.on("uno:pass_turn", () => {
+    const code = socketToRoom[socket.id];
+    const room = rooms[code];
+    if (!room || room.gameType !== "uno") return;
+    if (room.phase !== "uno_playing") return;
+    if (uno.getCurrentPlayerId(room) !== socket.id)
+      return socket.emit("error", { message: "It's not your turn" });
+
+    if (!room.drawnCardId && room.chainValue === null)
+      return socket.emit("error", { message: "Nothing to pass" });
+
+    room.drawnCardId = null;
+    room.chainValue  = null;
     uno.advanceTurn(room, 1);
     broadcastRoom(code);
   });
@@ -681,6 +751,8 @@ io.on("connection", (socket) => {
     room.pendingDrawCount = 0;
     room.saidUno      = {};
     room.roundWinnerId = null;
+    room.drawnCardId  = null;
+    room.chainValue   = null;
     broadcastRoom(code);
   });
 
