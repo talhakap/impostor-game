@@ -8,6 +8,7 @@ import TiebreakerRevealScreen from "./components/TiebreakerRevealScreen";
 import VotingScreen from "./components/VotingScreen";
 import RoundResultsScreen from "./components/RoundResultsScreen";
 import GameOverScreen from "./components/GameOverScreen";
+import UnoRouter from "./uno/UnoRouter";
 
 export default function App() {
   const [myId, setMyId] = useState(null);
@@ -39,6 +40,19 @@ export default function App() {
         error={error}
         kicked={kicked}
         clearError={() => { setError(null); setKicked(false); }}
+      />
+    );
+  }
+
+  // Route all UNO phases to the UNO module — Impostor routing is untouched below
+  if (room.gameType === "uno") {
+    return (
+      <UnoRouter
+        room={room}
+        myId={myId}
+        error={error}
+        clearError={() => setError(null)}
+        onLeave={handleLeave}
       />
     );
   }

@@ -478,3 +478,49 @@ button:active:not(:disabled) {
   .vote-grid { grid-template-columns: 1fr 1fr; }
   .role-word { font-size: 1.6rem; }
 }
+
+/* ── UNO ─────────────────────────────────────────────────── */
+
+/* "UNO!" call button — pulsing red */
+.uno-call-btn {
+  padding: 0.4rem 1.1rem;
+  border-radius: 999px;
+  background: #DC2626;
+  color: #fff;
+  border: none;
+  font-size: 0.9rem;
+  font-weight: 800;
+  font-family: 'Krona One', sans-serif;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  box-shadow: 0 0 16px rgba(220, 38, 38, 0.5);
+  animation: uno-pulse 1.1s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes uno-pulse {
+  0%, 100% { transform: scale(1);    box-shadow: 0 0 16px rgba(220,38,38,0.5); }
+  50%       { transform: scale(1.07); box-shadow: 0 0 28px rgba(220,38,38,0.8); }
+}
+
+/* "Catch <name>!" challenge button */
+.uno-challenge-btn {
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
+  background: transparent;
+  color: #DC2626;
+  border: 1.5px solid rgba(220,38,38,0.5);
+  font-size: 0.72rem;
+  font-weight: 700;
+  font-family: 'Exo', sans-serif;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.uno-challenge-btn:hover {
+  background: rgba(220,38,38,0.12);
+  border-color: rgba(220,38,38,0.8);
+}
