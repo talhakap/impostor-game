@@ -18,12 +18,32 @@ export default function App() {
   const [kicked, setKicked] = useState(false);
 
   useEffect(() => {
-    socket.on("connect", () => setMyId(socket.id));
+    socket.on("connect", () => {
+      setMyId(socket.id);
+
+      // Attempt silent rejoin if we have a saved session
+      const savedCode = localStorage.getItem("aeth_room_code");
+      const savedName = localStorage.getItem("aeth_player_name");
+      if (savedCode && savedName) {
+        socket.emit("room:rejoin", { code: savedCode, playerName: savedName }, (res) => {
+          if (res?.error) {
+            // Room gone or name not found — clear stale session silently
+            localStorage.removeItem("aeth_room_code");
+            localStorage.removeItem("aeth_player_name");
+          }
+        });
+      }
+    });
+
     socket.on("disconnect", () => setMyId(null));
     socket.on("room:updated", (roomView) => { setRoom(roomView); setError(null); });
     socket.on("player:role_assigned", (data) => setPrivateData(data));
     socket.on("error", ({ message }) => setError(message));
-    socket.on("kicked", () => { setRoom(null); setPrivateData(null); setKicked(true); });
+    socket.on("kicked", () => {
+      setRoom(null); setPrivateData(null); setKicked(true);
+      localStorage.removeItem("aeth_room_code");
+      localStorage.removeItem("aeth_player_name");
+    });
     return () => {
       socket.off("connect"); socket.off("disconnect");
       socket.off("room:updated"); socket.off("player:role_assigned");
@@ -31,7 +51,11 @@ export default function App() {
     };
   }, []);
 
-  const handleLeave = () => { setRoom(null); setPrivateData(null); setError(null); };
+  const handleLeave = () => {
+    setRoom(null); setPrivateData(null); setError(null);
+    localStorage.removeItem("aeth_room_code");
+    localStorage.removeItem("aeth_player_name");
+  };
 
   if (!room) {
     return (

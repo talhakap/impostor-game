@@ -49,7 +49,9 @@ export default function LandingScreen({ error, kicked, clearError }) {
     setLoading(true); setLocalError(null); clearError();
     socket.emit("room:create", { playerName: n, gameType: selectedGame }, (res) => {
       setLoading(false);
-      if (res.error) setLocalError(res.error);
+      if (res.error) { setLocalError(res.error); return; }
+      localStorage.setItem("aeth_room_code",   res.code);
+      localStorage.setItem("aeth_player_name", n);
     });
   };
 
@@ -61,7 +63,9 @@ export default function LandingScreen({ error, kicked, clearError }) {
     setLoading(true); setLocalError(null); clearError();
     socket.emit("room:join", { code: c, playerName: n }, (res) => {
       setLoading(false);
-      if (res.error) setLocalError(res.error);
+      if (res.error) { setLocalError(res.error); return; }
+      localStorage.setItem("aeth_room_code",   res.code);
+      localStorage.setItem("aeth_player_name", n);
     });
   };
 

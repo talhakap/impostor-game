@@ -18,9 +18,13 @@ const io = new Server(server, {
   cors: { origin: "*", methods: ["GET", "POST"] },
 });
 
-const rooms        = {};
-const socketToRoom = {};
-const activeTimers = {};
+const rooms          = {};
+const socketToRoom   = {};
+const activeTimers   = {};
+// Grace period timers: socketId → setTimeout handle.
+// When a player disconnects we wait GRACE_MS before treating it as permanent.
+const disconnectTimers = {};
+const GRACE_MS = 20_000; // 20 seconds
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -680,6 +684,96 @@ io.on("connection", (socket) => {
     broadcastRoom(code);
   });
 
+  // ── Rejoin (player returning after tab-switch / mobile suspend) ───────────
+
+  socket.on("room:rejoin", ({ code, playerName }, callback) => {
+    const upperCode = code?.toUpperCase();
+    const room      = rooms[upperCode];
+    if (!room) return callback({ error: "Room not found" });
+
+    // Find the disconnected slot that matches this name
+    const existing = Object.values(room.players).find(
+      (p) => !p.isConnected && p.name.toLowerCase() === playerName?.trim().toLowerCase()
+    );
+    if (!existing) return callback({ error: "No disconnected player found with that name" });
+
+    const oldId = existing.id;
+
+    // Cancel the pending grace-period eviction
+    if (disconnectTimers[oldId]) {
+      clearTimeout(disconnectTimers[oldId]);
+      delete disconnectTimers[oldId];
+    }
+
+    // Re-key the player under the new socket id
+    delete room.players[oldId];
+    existing.id          = socket.id;
+    existing.isConnected = true;
+    room.players[socket.id] = existing;
+
+    // Update socketToRoom mapping
+    delete socketToRoom[oldId];
+    socketToRoom[socket.id] = upperCode;
+    socket.join(upperCode);
+
+    // Transfer host ownership if they were the host
+    if (room.hostId === oldId) room.hostId = socket.id;
+
+    // UNO: re-key hand and saidUno
+    if (room.gameType === "uno" && room.hands) {
+      if (room.hands[oldId] !== undefined) {
+        room.hands[socket.id]   = room.hands[oldId];
+        room.saidUno[socket.id] = room.saidUno[oldId] ?? false;
+        delete room.hands[oldId];
+        delete room.saidUno[oldId];
+      }
+      // Fix turn order reference
+      const ti = room.turnOrder.indexOf(oldId);
+      if (ti !== -1) room.turnOrder[ti] = socket.id;
+    }
+
+    // UNO: fix scores key
+    if (room.gameType === "uno" && room.scores) {
+      if (room.scores[oldId] !== undefined) {
+        room.scores[socket.id] = room.scores[oldId];
+        delete room.scores[oldId];
+      }
+    }
+
+    // Impostor: re-key roles, submissions, votes
+    if (room.gameType !== "uno") {
+      if (room.roles?.[oldId] !== undefined) {
+        room.roles[socket.id] = room.roles[oldId];
+        delete room.roles[oldId];
+      }
+      if (room.submissions?.[oldId] !== undefined) {
+        room.submissions[socket.id] = room.submissions[oldId];
+        delete room.submissions[oldId];
+      }
+      if (room.votes?.[oldId] !== undefined) {
+        room.votes[socket.id] = room.votes[oldId];
+        delete room.votes[oldId];
+      }
+      // Fix any votes that were cast FOR the old id
+      for (const voter of Object.keys(room.votes || {})) {
+        if (room.votes[voter] === oldId) room.votes[voter] = socket.id;
+      }
+      // Re-send private role data for Impostor
+      if (room.roles?.[socket.id]) {
+        const role = room.roles[socket.id];
+        io.to(socket.id).emit("player:role_assigned", {
+          role,
+          word:     role === "normal" ? room.currentWord : null,
+          category: room.currentCategory,
+        });
+      }
+    }
+
+    console.log(`[~] ${oldId} rejoined as ${socket.id} (${existing.name})`);
+    callback({ code: upperCode });
+    broadcastRoom(upperCode);
+  });
+
   // ── Disconnect ─────────────────────────────────────────────────────────────
 
   socket.on("disconnect", () => {
@@ -690,34 +784,45 @@ io.on("connection", (socket) => {
     const player = room.players[socket.id];
     if (!player) return;
 
+    // Mark offline immediately so the UI shows them as disconnected
     player.isConnected = false;
     delete socketToRoom[socket.id];
-
-    const stillConnected = getConnectedPlayers(room);
-    if (stillConnected.length === 0) {
-      clearTimer(code);
-      delete rooms[code];
-      return;
-    }
-
-    // Transfer host if needed
-    if (room.hostId === socket.id) {
-      const nextHost = stillConnected.find((p) => !p.isEliminated) || stillConnected[0];
-      room.hostId = nextHost.id;
-    }
-
-    // UNO: if it was the disconnected player's turn, advance to the next player
-    if (room.gameType === "uno" && room.phase === "uno_playing") {
-      if (uno.getCurrentPlayerId(room) === socket.id) {
-        uno.advanceTurn(room, 1);
-      }
-    }
-
     broadcastRoom(code);
 
-    // Impostor: re-check completion conditions
-    if (room.phase === "answering" || room.phase === "tiebreaker_answering") checkAllSubmitted(code);
-    if (room.phase === "voting"    || room.phase === "tiebreaker_voting")    checkAllVoted(code);
+    // ── Grace period: wait GRACE_MS before treating as permanent ──────────
+    disconnectTimers[socket.id] = setTimeout(() => {
+      delete disconnectTimers[socket.id];
+
+      // Re-fetch in case room was deleted while we waited
+      const r = rooms[code];
+      if (!r || !r.players[socket.id]) return;
+
+      const stillConnected = getConnectedPlayers(r);
+      if (stillConnected.length === 0) {
+        clearTimer(code);
+        delete rooms[code];
+        return;
+      }
+
+      // Transfer host
+      if (r.hostId === socket.id) {
+        const nextHost = stillConnected.find((p) => !p.isEliminated) || stillConnected[0];
+        r.hostId = nextHost.id;
+      }
+
+      // UNO: skip their turn if it's currently theirs
+      if (r.gameType === "uno" && r.phase === "uno_playing") {
+        if (uno.getCurrentPlayerId(r) === socket.id) {
+          uno.advanceTurn(r, 1);
+        }
+      }
+
+      broadcastRoom(code);
+
+      // Impostor: re-check completion conditions
+      if (r.phase === "answering" || r.phase === "tiebreaker_answering") checkAllSubmitted(code);
+      if (r.phase === "voting"    || r.phase === "tiebreaker_voting")    checkAllVoted(code);
+    }, GRACE_MS);
   });
 });
 
