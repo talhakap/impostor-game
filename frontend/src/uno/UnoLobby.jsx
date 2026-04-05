@@ -1,8 +1,32 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { socket } from "../socket";
 
 export default function UnoLobby({ room, myId, error, onLeave }) {
-  const [copied, setCopied] = useState(false);
+  const [copied,   setCopied]   = useState(false);
+  const [messages, setMessages] = useState([]);
+  const [draft,    setDraft]    = useState("");
+  const bottomRef               = useRef(null);
+
+  useEffect(() => {
+    const handler = (msg) => setMessages((prev) => [...prev.slice(-199), msg]);
+    socket.on("uno:chat", handler);
+    return () => socket.off("uno:chat", handler);
+  }, []);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  const sendChat = () => {
+    const trimmed = draft.trim();
+    if (!trimmed) return;
+    socket.emit("uno:chat", { message: trimmed });
+    setDraft("");
+  };
+
+  const handleChatKey = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); }
+  };
 
   const isHost    = room.hostId === myId;
   const players   = room.players ?? [];
@@ -123,6 +147,72 @@ export default function UnoLobby({ room, myId, error, onLeave }) {
         ) : (
           <p className="muted center-text mt">Waiting for the host to start...</p>
         )}
+
+        <hr className="divider" style={{ marginTop: "1rem" }} />
+
+        {/* Chat */}
+        <div>
+          <div className="label" style={{ marginBottom: "0.5rem" }}>Chat</div>
+          <div style={{
+            height: "160px", overflowY: "auto",
+            display: "flex", flexDirection: "column", gap: "0.4rem",
+            marginBottom: "0.6rem",
+            scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent",
+          }}>
+            {messages.length === 0 && (
+              <p style={{ color: "var(--muted)", fontSize: "0.8rem" }}>No messages yet</p>
+            )}
+            {messages.map((m, i) => {
+              const isMe = m.playerId === myId;
+              return (
+                <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: isMe ? "flex-end" : "flex-start" }}>
+                  {!isMe && <span style={{ fontSize: "0.68rem", color: "var(--muted)", marginBottom: "0.1rem" }}>{m.playerName}</span>}
+                  <div style={{
+                    maxWidth: "80%", padding: "0.35rem 0.6rem",
+                    borderRadius: isMe ? "10px 10px 3px 10px" : "10px 10px 10px 3px",
+                    background: isMe ? "rgba(212,168,71,0.18)" : "var(--surface2)",
+                    border: `1px solid ${isMe ? "rgba(212,168,71,0.3)" : "var(--border)"}`,
+                    fontSize: "0.85rem", color: isMe ? "var(--yellow)" : "var(--text)",
+                    wordBreak: "break-word", lineHeight: 1.4,
+                  }}>
+                    {m.message}
+                  </div>
+                </div>
+              );
+            })}
+            <div ref={bottomRef} />
+          </div>
+          <div style={{ display: "flex", gap: "0.4rem" }}>
+            <input
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={handleChatKey}
+              placeholder="Say something..."
+              maxLength={120}
+              style={{
+                flex: 1, background: "var(--surface2)",
+                border: "1px solid var(--border)", borderRadius: "var(--radius-sm)",
+                color: "var(--text)", fontFamily: "'Exo', sans-serif",
+                fontSize: "0.85rem", padding: "0.4rem 0.65rem", outline: "none",
+              }}
+            />
+            <button
+              onClick={sendChat}
+              disabled={!draft.trim()}
+              style={{
+                padding: "0.4rem 0.75rem",
+                background: draft.trim() ? "var(--yellow)" : "var(--surface3)",
+                color: draft.trim() ? "#1a1600" : "var(--muted)",
+                border: "none", borderRadius: "var(--radius-sm)",
+                fontFamily: "'Exo', sans-serif", fontWeight: 700, fontSize: "0.8rem",
+                cursor: draft.trim() ? "pointer" : "default",
+                transition: "background 0.15s, color 0.15s", flexShrink: 0,
+              }}
+            >
+              Send
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

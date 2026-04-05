@@ -909,6 +909,24 @@ io.on("connection", (socket) => {
     broadcastRoom(code);
   });
 
+  // ── UNO: chat ─────────────────────────────────────────────────────────────
+
+  socket.on("uno:chat", ({ message }) => {
+    const code = socketToRoom[socket.id];
+    const room = rooms[code];
+    if (!room || room.gameType !== "uno") return;
+    const player = room.players[socket.id];
+    if (!player) return;
+    const trimmed = (message || "").trim().slice(0, 120);
+    if (!trimmed) return;
+    io.to(code).emit("uno:chat", {
+      playerId: socket.id,
+      playerName: player.name,
+      message: trimmed,
+      ts: Date.now(),
+    });
+  });
+
   // ── UNO: say UNO ──────────────────────────────────────────────────────────
 
   socket.on("uno:say_uno", () => {

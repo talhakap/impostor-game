@@ -5,10 +5,13 @@ import UnoColorPicker  from "./UnoColorPicker";
 import UnoPlayerSeats  from "./UnoPlayerSeats";
 import UnoDiscardPile  from "./UnoDiscardPile";
 import UnoDrawPile     from "./UnoDrawPile";
+import UnoChatPanel    from "./UnoChatPanel";
 
 export default function UnoGame({ room, myId, error, clearError }) {
   const [pendingWild, setPendingWild] = useState(null);
   const [localError,  setLocalError]  = useState(null);
+  const [chatOpen,    setChatOpen]    = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const isMyTurn      = room.currentTurnPlayerId === myId;
   const myPlayer      = room.players.find((p) => p.id === myId);
@@ -37,6 +40,14 @@ export default function UnoGame({ room, myId, error, clearError }) {
     }
   // hand intentionally included so we re-check when cards change
   }, [isMyTurn, pendingDrawCount, pendingDrawType, hand]); // eslint-disable-line
+
+  // ── Unread chat counter ─────────────────────────────────────────────────────
+
+  useEffect(() => {
+    const handler = () => { if (!chatOpen) setUnreadCount((n) => n + 1); };
+    socket.on("uno:chat", handler);
+    return () => socket.off("uno:chat", handler);
+  }, [chatOpen]);
 
   // ── Auto-clear errors ───────────────────────────────────────────────────────
 
@@ -135,9 +146,38 @@ export default function UnoGame({ room, myId, error, clearError }) {
         <span style={{ fontSize: "0.85rem", fontWeight: 400, color: "var(--text)", fontFamily: "'Krona One', sans-serif" }}>
           UNO
         </span>
-        <span style={{ fontSize: "0.7rem", color: "var(--muted)", fontFamily: "'Exo', sans-serif" }}>
-          R{room.roundNumber} {directionArrow}
-        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+          <span style={{ fontSize: "0.7rem", color: "var(--muted)", fontFamily: "'Exo', sans-serif" }}>
+            R{room.roundNumber} {directionArrow}
+          </span>
+          <button
+            onClick={() => { setChatOpen((o) => !o); setUnreadCount(0); }}
+            style={{
+              position: "relative",
+              background: chatOpen ? "rgba(212,168,71,0.15)" : "transparent",
+              border: `1px solid ${chatOpen ? "rgba(212,168,71,0.35)" : "var(--border)"}`,
+              borderRadius: "var(--radius-sm)",
+              color: chatOpen ? "var(--yellow)" : "var(--muted)",
+              cursor: "pointer", padding: "0.2rem 0.5rem",
+              fontSize: "0.8rem", lineHeight: 1,
+              transition: "all 0.15s",
+            }}
+          >
+            💬
+            {unreadCount > 0 && (
+              <span style={{
+                position: "absolute", top: -5, right: -5,
+                background: "var(--red)", color: "#fff",
+                borderRadius: 999, fontSize: "0.6rem",
+                fontWeight: 700, minWidth: 14, height: 14,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                padding: "0 3px",
+              }}>
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* ── Table area: seats + draw/discard ── */}
@@ -317,6 +357,15 @@ export default function UnoGame({ room, myId, error, clearError }) {
         <UnoColorPicker
           onSelect={handleColorSelect}
           onCancel={() => setPendingWild(null)}
+        />
+      )}
+
+      {/* ── Chat panel ── */}
+      {chatOpen && (
+        <UnoChatPanel
+          myId={myId}
+          players={room.players}
+          onClose={() => setChatOpen(false)}
         />
       )}
     </div>
