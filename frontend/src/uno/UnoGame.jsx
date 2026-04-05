@@ -12,6 +12,8 @@ export default function UnoGame({ room, myId, error, clearError }) {
   const [localError,  setLocalError]  = useState(null);
   const [chatOpen,    setChatOpen]    = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [bubbles,     setBubbles]     = useState({}); // playerId → message
+  const bubbleTimers = React.useRef({});
 
   const isMyTurn      = room.currentTurnPlayerId === myId;
   const myPlayer      = room.players.find((p) => p.id === myId);
@@ -41,10 +43,24 @@ export default function UnoGame({ room, myId, error, clearError }) {
   // hand intentionally included so we re-check when cards change
   }, [isMyTurn, pendingDrawCount, pendingDrawType, hand]); // eslint-disable-line
 
-  // ── Unread chat counter ─────────────────────────────────────────────────────
+  // ── Chat bubbles + unread counter ──────────────────────────────────────────
 
   useEffect(() => {
-    const handler = () => { if (!chatOpen) setUnreadCount((n) => n + 1); };
+    const handler = (msg) => {
+      if (!chatOpen) setUnreadCount((n) => n + 1);
+
+      // Show bubble beside player chip for 5 seconds
+      setBubbles((prev) => ({ ...prev, [msg.playerId]: msg.message }));
+      if (bubbleTimers.current[msg.playerId]) clearTimeout(bubbleTimers.current[msg.playerId]);
+      bubbleTimers.current[msg.playerId] = setTimeout(() => {
+        setBubbles((prev) => {
+          const next = { ...prev };
+          delete next[msg.playerId];
+          return next;
+        });
+        delete bubbleTimers.current[msg.playerId];
+      }, 5000);
+    };
     socket.on("uno:chat", handler);
     return () => socket.off("uno:chat", handler);
   }, [chatOpen]);
@@ -194,6 +210,7 @@ export default function UnoGame({ room, myId, error, clearError }) {
           currentTurnPlayerId={room.currentTurnPlayerId}
           isHost={room.hostId === myId}
           onKick={(playerId) => socket.emit("host:kick_player", { playerId })}
+          bubbles={bubbles}
         />
 
         {/* Draw + discard piles in the centre */}

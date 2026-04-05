@@ -498,6 +498,11 @@ button:active:not(:disabled) {
   flex-shrink: 0;
 }
 
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+
 @keyframes uno-pulse {
   0%, 100% { transform: scale(1);    box-shadow: 0 0 16px rgba(220,38,38,0.5); }
   50%       { transform: scale(1.07); box-shadow: 0 0 28px rgba(220,38,38,0.8); }

@@ -30,6 +30,7 @@ export default function UnoPlayerSeats({
   currentTurnPlayerId,
   isHost,
   onKick,
+  bubbles = {},
 }) {
   const me = players.find((p) => p.id === myId);
 
@@ -162,6 +163,26 @@ export default function UnoPlayerSeats({
                 UNO!
               </span>
             )}
+
+            {/* Chat bubble */}
+            {bubbles[p.id] && (
+              <div style={{
+                maxWidth: 130,
+                padding: "0.3rem 0.55rem",
+                borderRadius: "10px 10px 10px 3px",
+                background: "rgba(32,33,35,0.95)",
+                border: "1px solid var(--border-bright)",
+                fontSize: "0.72rem",
+                color: "var(--text)",
+                wordBreak: "break-word",
+                lineHeight: 1.35,
+                boxShadow: "0 2px 10px rgba(0,0,0,0.5)",
+                backdropFilter: "blur(6px)",
+                animation: "fadeInUp 0.15s ease",
+              }}>
+                {bubbles[p.id]}
+              </div>
+            )}
           </div>
         );
       })}
@@ -222,6 +243,26 @@ export default function UnoPlayerSeats({
             }}>
               UNO!
             </span>
+          )}
+
+          {/* Chat bubble for "You" */}
+          {bubbles[me.id] && (
+            <div style={{
+              maxWidth: 150,
+              padding: "0.3rem 0.55rem",
+              borderRadius: "10px 10px 10px 3px",
+              background: "rgba(212,168,71,0.15)",
+              border: "1px solid rgba(212,168,71,0.35)",
+              fontSize: "0.72rem",
+              color: "var(--yellow)",
+              wordBreak: "break-word",
+              lineHeight: 1.35,
+              boxShadow: "0 2px 10px rgba(0,0,0,0.5)",
+              backdropFilter: "blur(6px)",
+              animation: "fadeInUp 0.15s ease",
+            }}>
+              {bubbles[me.id]}
+            </div>
           )}
         </div>
       )}
