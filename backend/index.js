@@ -196,7 +196,12 @@ function assignRoles(roomCode) {
 
   const active    = getActivePlayers(room);
   const activeIds = active.map((p) => p.id);
-  const shuffled  = [...activeIds].sort(() => Math.random() - 0.5);
+  // Fisher-Yates shuffle for unbiased impostor selection
+  const shuffled  = [...activeIds];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
   const impostorCount = Math.min(room.settings.impostorCount, activeIds.length - 1);
   const impostors = new Set(shuffled.slice(0, impostorCount));
 
@@ -204,7 +209,12 @@ function assignRoles(roomCode) {
   activeIds.forEach((id) => { room.roles[id] = impostors.has(id) ? "impostor" : "normal"; });
 
   // Sequential answering order — randomised separately from impostor assignment
-  room.playerAnswerOrder     = [...activeIds].sort(() => Math.random() - 0.5);
+  const answerOrder = [...activeIds];
+  for (let i = answerOrder.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [answerOrder[i], answerOrder[j]] = [answerOrder[j], answerOrder[i]];
+  }
+  room.playerAnswerOrder     = answerOrder;
   room.currentAnsweringIndex = 0;
   room.revealedAnswers       = {};
 
