@@ -2,8 +2,9 @@ import React, { useState, useEffect } from "react";
 import { socket } from "./socket";
 import LandingScreen from "./components/LandingScreen";
 import LobbyScreen from "./components/LobbyScreen";
+import PlayerAnsweringScreen from "./components/PlayerAnsweringScreen";
+import AllAnswersScreen from "./components/AllAnswersScreen";
 import AnsweringScreen from "./components/AnsweringScreen";
-import RoundCompleteScreen from "./components/RoundCompleteScreen";
 import TiebreakerRevealScreen from "./components/TiebreakerRevealScreen";
 import VotingScreen from "./components/VotingScreen";
 import RoundResultsScreen from "./components/RoundResultsScreen";
@@ -99,12 +100,12 @@ export default function App() {
     );
   }
 
-  if (phase === "answering") {
-    return <AnsweringScreen room={room} myId={myId} privateData={privateData} />;
+  if (phase === "player_answering") {
+    return <PlayerAnsweringScreen room={room} myId={myId} privateData={privateData} />;
   }
 
-  if (phase === "round_complete") {
-    return <RoundCompleteScreen room={room} myId={myId} />;
+  if (phase === "all_answers") {
+    return <AllAnswersScreen room={room} myId={myId} />;
   }
 
   if (phase === "voting") {

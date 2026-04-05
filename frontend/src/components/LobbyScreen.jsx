@@ -88,13 +88,6 @@ export default function LobbyScreen({ room, myId, error, clearError, onLeave }) 
                   onChange={(e) => socket.emit("host:update_settings", { roundDurationSecs: e.target.value })} />
               ) : <strong>{settings.roundDurationSecs}s</strong>}
             </div>
-            <div className="settings-row">
-              <span className="setting-label">Word Rounds</span>
-              {isHost ? (
-                <input type="number" min={1} max={10} value={settings.totalRounds}
-                  onChange={(e) => socket.emit("host:update_settings", { totalRounds: e.target.value })} />
-              ) : <strong>{settings.totalRounds}</strong>}
-            </div>
           </div>
         </div>
 

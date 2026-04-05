@@ -74,7 +74,7 @@ export default function UnoLobby({ room, myId, error, onLeave }) {
 
         {/* Players + wins combined */}
         <div className="mb">
-          <div className="label">Players ({connected.length} / 10)</div>
+          <div className="label">Players ({connected.length} / 20)</div>
           <div className="stack-sm">
             {players.map((p) => {
               const wins = room.scores?.[p.id] ?? 0;

@@ -120,13 +120,17 @@ function clearTimer(roomCode) {
 // ─── Impostor view builder ────────────────────────────────────────────────────
 
 const REVEAL_PHASES = new Set([
-  "round_complete", "revealing", "voting",
+  "all_answers", "revealing", "voting",
   "tiebreaker_answering", "tiebreaker_revealing", "tiebreaker_voting",
   "round_results", "game_over",
 ]);
 
 function buildRoomView(room) {
   const showAll = REVEAL_PHASES.has(room.phase);
+  const currentAnsweringPlayerId =
+    room.playerAnswerOrder && room.currentAnsweringIndex < room.playerAnswerOrder.length
+      ? room.playerAnswerOrder[room.currentAnsweringIndex]
+      : null;
   return {
     code:           room.code,
     hostId:         room.hostId,
@@ -148,6 +152,10 @@ function buildRoomView(room) {
     allSubmissions: showAll ? room.allSubmissions : null,
     submittedIds:   Object.keys(room.submissions || {}),
     roundResults:   room.roundResults || null,
+    // Sequential answering fields
+    currentAnsweringPlayerId,
+    revealedAnswers: room.revealedAnswers || {},
+    playerAnswerOrder: room.playerAnswerOrder || [],
   };
 }
 
@@ -195,6 +203,11 @@ function assignRoles(roomCode) {
   room.roles = {};
   activeIds.forEach((id) => { room.roles[id] = impostors.has(id) ? "impostor" : "normal"; });
 
+  // Sequential answering order — randomised separately from impostor assignment
+  room.playerAnswerOrder     = [...activeIds].sort(() => Math.random() - 0.5);
+  room.currentAnsweringIndex = 0;
+  room.revealedAnswers       = {};
+
   activeIds.forEach((id) => {
     const role = room.roles[id];
     io.to(id).emit("player:role_assigned", {
@@ -205,28 +218,59 @@ function assignRoles(roomCode) {
   });
 }
 
-function startAnsweringPhase(roomCode) {
+function startPlayerAnswering(roomCode) {
   const room = rooms[roomCode];
   if (!room) return;
-  room.submissions  = {};
-  room.phase        = "answering";
-  room.timerEndsAt  = Date.now() + room.settings.roundDurationSecs * 1000;
+  room.submissions = {};
+  room.phase       = "player_answering";
+  room.timerEndsAt = Date.now() + room.settings.roundDurationSecs * 1000;
   clearTimer(roomCode);
   activeTimers[roomCode] = setTimeout(
-    () => advanceAnsweringRound(roomCode),
+    () => advanceToNextPlayer(roomCode),
     room.settings.roundDurationSecs * 1000
   );
   broadcastRoom(roomCode);
 }
 
-function advanceAnsweringRound(roomCode) {
+function advanceToNextPlayer(roomCode) {
   const room = rooms[roomCode];
-  if (!room || room.phase !== "answering") return;
+  if (!room || room.phase !== "player_answering") return;
   clearTimer(roomCode);
-  room.allSubmissions[`round_${room.answeringRound}`] = { ...room.submissions };
-  room.submissions = {};
-  room.phase       = "round_complete";
-  room.timerEndsAt = null;
+
+  // If current player didn't answer (timed out), store empty string
+  const currentPlayerId = room.playerAnswerOrder[room.currentAnsweringIndex];
+  if (currentPlayerId && !(currentPlayerId in room.revealedAnswers)) {
+    room.revealedAnswers[currentPlayerId] = "";
+  }
+
+  room.currentAnsweringIndex++;
+
+  // Skip eliminated or missing players
+  while (
+    room.currentAnsweringIndex < room.playerAnswerOrder.length &&
+    (
+      room.players[room.playerAnswerOrder[room.currentAnsweringIndex]]?.isEliminated ||
+      !room.players[room.playerAnswerOrder[room.currentAnsweringIndex]]
+    )
+  ) {
+    room.currentAnsweringIndex++;
+  }
+
+  if (room.currentAnsweringIndex >= room.playerAnswerOrder.length) {
+    // All players answered — move to review screen
+    room.allSubmissions = { round_1: { ...room.revealedAnswers } };
+    room.phase          = "all_answers";
+    room.timerEndsAt    = null;
+    broadcastRoom(roomCode);
+    return;
+  }
+
+  // Start next player's turn
+  room.timerEndsAt = Date.now() + room.settings.roundDurationSecs * 1000;
+  activeTimers[roomCode] = setTimeout(
+    () => advanceToNextPlayer(roomCode),
+    room.settings.roundDurationSecs * 1000
+  );
   broadcastRoom(roomCode);
 }
 
@@ -335,13 +379,9 @@ function tallyVotesAndFinish(roomCode) {
 
 function checkAllSubmitted(roomCode) {
   const room = rooms[roomCode];
-  if (!room) return;
+  if (!room || room.phase !== "tiebreaker_answering") return;
   const active = getActivePlayers(room);
-  if (room.phase === "answering") {
-    if (active.every((p) => p.id in room.submissions)) advanceAnsweringRound(roomCode);
-  } else if (room.phase === "tiebreaker_answering") {
-    if (active.every((p) => p.id in room.submissions)) advanceTiebreakerToReveal(roomCode);
-  }
+  if (active.every((p) => p.id in room.submissions)) advanceTiebreakerToReveal(roomCode);
 }
 
 function checkAllVoted(roomCode) {
@@ -407,7 +447,7 @@ io.on("connection", (socket) => {
         ...baseRoom,
         phase:          "lobby",
         answeringRound: 1,
-        settings: { impostorCount: 1, roundDurationSecs: 60, totalRounds: 2 },
+        settings: { impostorCount: 1, roundDurationSecs: 60 },
         roles: {}, submissions: {}, votes: {}, allSubmissions: {},
         currentWord: null, currentCategory: null,
         timerEndsAt: null, roundResults: null,
@@ -430,7 +470,7 @@ io.on("connection", (socket) => {
 
     const isJoinable = room.phase === "lobby" || room.phase === "uno_lobby";
     if (!isJoinable) return callback({ error: "Game already in progress" });
-    if (Object.keys(room.players).length >= 10) return callback({ error: "Room is full" });
+    if (Object.keys(room.players).length >= 20) return callback({ error: "Room is full" });
     if (!playerName?.trim()) return callback({ error: "Name required" });
 
     const nameExists = Object.values(room.players).some(
@@ -456,7 +496,7 @@ io.on("connection", (socket) => {
 
   // ── Impostor: lobby settings ───────────────────────────────────────────────
 
-  socket.on("host:update_settings", ({ impostorCount, roundDurationSecs, totalRounds }) => {
+  socket.on("host:update_settings", ({ impostorCount, roundDurationSecs }) => {
     const code = socketToRoom[socket.id];
     const room = rooms[code];
     if (!room || room.hostId !== socket.id || room.phase !== "lobby") return;
@@ -465,8 +505,6 @@ io.on("connection", (socket) => {
       room.settings.impostorCount = Math.max(1, Math.min(Number(impostorCount), playerCount - 1));
     if (roundDurationSecs !== undefined)
       room.settings.roundDurationSecs = Math.max(15, Math.min(300, Number(roundDurationSecs)));
-    if (totalRounds !== undefined)
-      room.settings.totalRounds = Math.max(1, Math.min(10, Number(totalRounds)));
     broadcastRoom(code);
   });
 
@@ -485,7 +523,7 @@ io.on("connection", (socket) => {
     setTimeout(() => {
       if (!rooms[code]) return;
       assignRoles(code);
-      startAnsweringPhase(code);
+      startPlayerAnswering(code);
     }, 1500);
   });
 
@@ -511,20 +549,15 @@ io.on("connection", (socket) => {
     broadcastRoom(code);
   });
 
-  // ── Impostor: advance answering round ─────────────────────────────────────
+  // ── Impostor: proceed from all_answers to voting ──────────────────────────
 
-  socket.on("host:advance_round", () => {
+  socket.on("host:proceed_to_vote", () => {
     const code = socketToRoom[socket.id];
     const room = rooms[code];
-    if (!room || room.hostId !== socket.id || room.phase !== "round_complete") return;
-    if (room.answeringRound >= room.settings.totalRounds) {
-      room.votes = {};
-      room.phase = "voting";
-      broadcastRoom(code);
-    } else {
-      room.answeringRound++;
-      startAnsweringPhase(code);
-    }
+    if (!room || room.hostId !== socket.id || room.phase !== "all_answers") return;
+    room.votes = {};
+    room.phase = "voting";
+    broadcastRoom(code);
   });
 
   // ── Impostor: submit answer ────────────────────────────────────────────────
@@ -533,14 +566,30 @@ io.on("connection", (socket) => {
     const code = socketToRoom[socket.id];
     const room = rooms[code];
     if (!room) return;
-    if (room.phase !== "answering" && room.phase !== "tiebreaker_answering") return;
-    if (room.players[socket.id]?.isEliminated) return;
-    if (socket.id in room.submissions) return;
-    const trimmed = (answer || "").trim().slice(0, 200);
-    if (!trimmed) return;
-    room.submissions[socket.id] = trimmed;
-    broadcastRoom(code);
-    checkAllSubmitted(code);
+
+    if (room.phase === "player_answering") {
+      // Only the current answering player may submit
+      const currentId = room.playerAnswerOrder[room.currentAnsweringIndex];
+      if (socket.id !== currentId) return;
+      if (socket.id in room.revealedAnswers) return;
+      const trimmed = (answer || "").trim().slice(0, 200);
+      if (!trimmed) return;
+      room.revealedAnswers[socket.id] = trimmed;
+      broadcastRoom(code); // show answer to all
+      advanceToNextPlayer(code);
+      return;
+    }
+
+    if (room.phase === "tiebreaker_answering") {
+      if (room.players[socket.id]?.isEliminated) return;
+      if (socket.id in room.submissions) return;
+      const trimmed = (answer || "").trim().slice(0, 200);
+      if (!trimmed) return;
+      room.submissions[socket.id] = trimmed;
+      broadcastRoom(code);
+      checkAllSubmitted(code);
+      return;
+    }
   });
 
   // ── Impostor: advance to voting ────────────────────────────────────────────
@@ -602,6 +651,7 @@ io.on("connection", (socket) => {
     room.roundResults = null; room.timerEndsAt = null;
     room.tiedPlayerIds = []; room.pendingEliminations = [];
     room.tiebreakerCount = 0; room.answeringRound = 1;
+    room.playerAnswerOrder = []; room.currentAnsweringIndex = 0; room.revealedAnswers = {};
     clearTimer(code);
     broadcastRoom(code);
   });
@@ -951,6 +1001,16 @@ io.on("connection", (socket) => {
       for (const voter of Object.keys(room.votes || {})) {
         if (room.votes[voter] === oldId) room.votes[voter] = socket.id;
       }
+      // Re-key revealedAnswers
+      if (room.revealedAnswers?.[oldId] !== undefined) {
+        room.revealedAnswers[socket.id] = room.revealedAnswers[oldId];
+        delete room.revealedAnswers[oldId];
+      }
+      // Re-key playerAnswerOrder
+      if (room.playerAnswerOrder) {
+        const pi = room.playerAnswerOrder.indexOf(oldId);
+        if (pi !== -1) room.playerAnswerOrder[pi] = socket.id;
+      }
       // Re-send private role data for Impostor
       if (room.roles?.[socket.id]) {
         const role = room.roles[socket.id];
@@ -1020,7 +1080,12 @@ io.on("connection", (socket) => {
 
       broadcastRoom(code);
 
-      if (r.phase === "answering" || r.phase === "tiebreaker_answering") checkAllSubmitted(code);
+      if (r.phase === "player_answering") {
+        // If disconnected player was the current answerer, skip them
+        const currentId = r.playerAnswerOrder[r.currentAnsweringIndex];
+        if (currentId === socket.id) advanceToNextPlayer(code);
+      }
+      if (r.phase === "tiebreaker_answering") checkAllSubmitted(code);
       if (r.phase === "voting"    || r.phase === "tiebreaker_voting")    checkAllVoted(code);
     }, GRACE_MS);
   });
