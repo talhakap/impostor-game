@@ -97,6 +97,9 @@ function dealCards(room) {
   room.direction        = 1;
   room.currentTurnIndex = 0;
   room.pendingDrawCount = 0;
+  room.pendingDrawType  = null;
+  room.chainType        = null;
+  room.chainCount       = 0;
   room.saidUno          = {};
   room.roundWinnerId    = null;
   room.drawnCardId      = null; // id of card drawn this turn (null = no draw yet)
@@ -110,8 +113,12 @@ function dealCards(room) {
 // ─── Validation ───────────────────────────────────────────────────────────────
 
 // Returns true if `card` may legally be played given the current game state.
-function isValidPlay(card, topCard, currentColor, pendingDrawCount) {
-  if (pendingDrawCount > 0) return false;          // player must draw first
+// pendingDrawType is "draw_two" | "wild_draw_four" | null — set when a draw stack is active.
+function isValidPlay(card, topCard, currentColor, pendingDrawCount, pendingDrawType) {
+  if (pendingDrawCount > 0) {
+    // During an active draw stack only the same draw-card type can continue it
+    return card.type === pendingDrawType;
+  }
   if (card.color === "wild") return true;           // wild always legal
   if (card.color === currentColor) return true;     // matches active color
   // Action card matching action card (skip-on-skip, etc.)
@@ -155,11 +162,10 @@ function applyCardEffect(room, card, chosenColor) {
       break;
 
     case "draw_two": {
-      room.currentColor = card.color;
-      const nextPid = room.turnOrder[getNextTurnIndex(room, 1)];
-      drawCards(room, nextPid, 2);
-      room.saidUno[nextPid] = false; // hand grew, reset UNO status
-      advanceTurn(room, 2);          // skip the player who just drew
+      room.currentColor     = card.color;
+      room.pendingDrawCount = (room.pendingDrawCount || 0) + 2;
+      room.pendingDrawType  = "draw_two";
+      advanceTurn(room, 1); // next player must stack another +2 or draw the total
       break;
     }
 
@@ -169,11 +175,10 @@ function applyCardEffect(room, card, chosenColor) {
       break;
 
     case "wild_draw_four": {
-      room.currentColor = chosenColor;
-      const nextPid4 = room.turnOrder[getNextTurnIndex(room, 1)];
-      drawCards(room, nextPid4, 4);
-      room.saidUno[nextPid4] = false;
-      advanceTurn(room, 2); // skip the player who just drew
+      room.currentColor     = chosenColor;
+      room.pendingDrawCount = (room.pendingDrawCount || 0) + 4;
+      room.pendingDrawType  = "wild_draw_four";
+      advanceTurn(room, 1); // next player must stack another +4 or draw the total
       break;
     }
 
@@ -206,35 +211,53 @@ function buildUnoView(room, requestingPlayerId) {
   const topCard         = room.discardPile?.[room.discardPile.length - 1] ?? null;
   const currentPlayerId = getCurrentPlayerId(room);
 
+  // Build player list in turn order so the UI can render them correctly.
+  // Players not in turnOrder (lobby-only) fall back to insertion order.
+  const orderedIds = room.turnOrder?.length
+    ? room.turnOrder
+    : Object.keys(room.players);
+  const orderedPlayers = [
+    ...orderedIds.filter((id) => room.players[id]),
+    ...Object.keys(room.players).filter((id) => !orderedIds.includes(id)),
+  ];
+
   return {
     code:               room.code,
     hostId:             room.hostId,
     gameType:           "uno",
     phase:              room.phase,
-    players: Object.values(room.players).map((p) => ({
-      id:           p.id,
-      name:         p.name,
-      isHost:       p.id === room.hostId,
-      isConnected:  p.isConnected,
-      cardCount:    room.hands?.[p.id]?.length ?? 0,
-      isCurrentTurn: p.id === currentPlayerId,
-      saidUno:      room.saidUno?.[p.id] ?? false,
-    })),
+    turnOrder:          room.turnOrder ?? [],
+    players: orderedPlayers.map((id) => {
+      const p = room.players[id];
+      return {
+        id:           p.id,
+        name:         p.name,
+        isHost:       p.id === room.hostId,
+        isConnected:  p.isConnected,
+        cardCount:    room.hands?.[p.id]?.length ?? 0,
+        isCurrentTurn: p.id === currentPlayerId,
+        saidUno:      room.saidUno?.[p.id] ?? false,
+      };
+    }),
     topCard,
     drawPileCount:      room.drawPile?.length ?? 0,
     currentColor:       room.currentColor ?? null,
     currentTurnPlayerId: currentPlayerId ?? null,
     direction:          room.direction ?? 1,
     pendingDrawCount:   room.pendingDrawCount ?? 0,
+    pendingDrawType:    room.pendingDrawType  ?? null,
     // Private: only this player's own cards
     hand:               room.hands?.[requestingPlayerId] ?? [],
     roundNumber:        room.roundNumber ?? 1,
     scores:             room.scores ?? {},
-    roundWinnerId:      room.roundWinnerId ?? null,
-    gameWinnerId:       room.gameWinnerId ?? null,
+    roundWinnerId:      room.roundWinnerId      ?? null,
+    lastRoundWinnerId:  room.lastRoundWinnerId  ?? null,
+    gameWinnerId:       room.gameWinnerId       ?? null,
     // Draw & chain state — used by the client to restrict playable cards
-    drawnCardId:        room.drawnCardId ?? null,
-    chainValue:         room.chainValue  ?? null,
+    drawnCardId:        room.drawnCardId  ?? null,
+    chainValue:         room.chainValue   ?? null,
+    chainType:          room.chainType    ?? null,
+    chainCount:         room.chainCount   ?? 0,
   };
 }
 

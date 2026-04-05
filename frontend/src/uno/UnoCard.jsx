@@ -199,27 +199,13 @@ export default function UnoCard({ card, onClick, playable, selected, small, face
             {centerLabel}
           </span>
           {/* Black transparent logo watermark on white oval */}
-          <img
-            src="/logo-black.png"
-            alt=""
-            draggable={false}
-            style={{
-              position: "absolute",
-              width: `${S * 16}px`,
-              bottom: `${S * 6}px`,
-              right: `${S * 8}px`,
-              opacity: 0.1,
-              transform: "rotate(20deg)",
-              pointerEvents: "none",
-              zIndex: 0,
-            }}
-          />
+          
         </div>
       )}
 
       {/* Cream transparent logo — bottom centre over solid card colour */}
       <img
-        src="/logo-cream.png"
+        src="/logo-black.png"
         alt=""
         draggable={false}
         style={{
@@ -228,7 +214,7 @@ export default function UnoCard({ card, onClick, playable, selected, small, face
           left: "50%",
           transform: "translateX(-50%)",
           width: `${S * 18}px`,
-          opacity: 0.28,
+          
           pointerEvents: "none",
           zIndex: 3,
         }}

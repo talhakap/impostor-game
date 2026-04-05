@@ -4,7 +4,7 @@ import UnoCard from "./UnoCard";
 // Dummy card object — only used to render the face-down back
 const BACK_CARD = { id: "__back__", color: "wild", type: "wild", value: null };
 
-export default function UnoDrawPile({ count, onDraw, isMyTurn }) {
+export default function UnoDrawPile({ count, onDraw, isMyTurn, pendingDrawCount }) {
   return (
     <div style={{
       display: "flex", flexDirection: "column",
@@ -28,7 +28,7 @@ export default function UnoDrawPile({ count, onDraw, isMyTurn }) {
           position: "relative",
         }}
       >
-        <UnoCard card={BACK_CARD} faceDown playable={isMyTurn ? true : undefined} />
+        <UnoCard card={BACK_CARD} faceDown />
         {/* Card count badge */}
         <div style={{
           position: "absolute",
@@ -51,11 +51,13 @@ export default function UnoDrawPile({ count, onDraw, isMyTurn }) {
       {isMyTurn && (
         <div style={{
           marginTop: "0.6rem",
-          fontSize: "0.58rem", color: "var(--muted)",
+          fontSize: "0.58rem",
+          color: pendingDrawCount > 0 ? "var(--red)" : "var(--muted)",
           textAlign: "center", letterSpacing: "0.07em",
           textTransform: "uppercase",
+          fontWeight: pendingDrawCount > 0 ? 700 : 400,
         }}>
-          Tap to draw
+          {pendingDrawCount > 0 ? `Tap to draw ${pendingDrawCount}` : "Tap to draw"}
         </div>
       )}
     </div>

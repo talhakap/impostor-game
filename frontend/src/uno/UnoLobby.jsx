@@ -17,12 +17,14 @@ export default function UnoLobby({ room, myId, error, onLeave }) {
   const sortedScores = Object.entries(room.scores ?? {})
     .map(([id, score]) => ({
       id,
-      name:  players.find((p) => p.id === id)?.name ?? "Unknown",
+      name: players.find((p) => p.id === id)?.name ?? "Unknown",
       score,
     }))
     .sort((a, b) => b.score - a.score);
 
-  const showScores = room.roundNumber > 1 && sortedScores.some((e) => e.score > 0);
+  const hasAnyWins       = sortedScores.some((e) => e.score > 0);
+  const lastWinner       = players.find((p) => p.id === room.lastRoundWinnerId);
+  const lastWinnerIsMe   = room.lastRoundWinnerId === myId;
 
   return (
     <div className="container">
@@ -30,22 +32,30 @@ export default function UnoLobby({ room, myId, error, onLeave }) {
 
         {/* Header */}
         <div className="row-between mb">
-          <div>
-            <h2 style={{ marginBottom: 0 }}>UNO Lobby</h2>
-            {room.roundNumber > 1 && (
-              <p className="muted" style={{ fontSize: "0.8rem", marginTop: "0.2rem" }}>
-                Completed rounds: {room.roundNumber - 1}
-              </p>
-            )}
-          </div>
-          <button
-            className="btn-ghost"
-            style={{ width: "auto" }}
-            onClick={onLeave}
-          >
+          <h2 style={{ marginBottom: 0 }}>UNO</h2>
+          <button className="btn-ghost" style={{ width: "auto" }} onClick={onLeave}>
             Leave
           </button>
         </div>
+
+        {/* Last round result banner */}
+        {room.lastRoundWinnerId && (
+          <div style={{
+            padding: "0.6rem 1rem",
+            borderRadius: "var(--radius-sm)",
+            background: lastWinnerIsMe ? "var(--yellow-glow)" : "var(--surface2)",
+            border: `1px solid ${lastWinnerIsMe ? "rgba(212,168,71,0.4)" : "var(--border)"}`,
+            marginBottom: "0.85rem",
+            textAlign: "center",
+            fontSize: "0.88rem",
+            fontWeight: 600,
+            color: lastWinnerIsMe ? "var(--yellow)" : "var(--text)",
+          }}>
+            {lastWinnerIsMe
+              ? "You won the last round!"
+              : `${lastWinner?.name ?? "Someone"} won the last round`}
+          </div>
+        )}
 
         {/* Room code */}
         <div className="mb">
@@ -53,9 +63,7 @@ export default function UnoLobby({ room, myId, error, onLeave }) {
           <div className="room-code" onClick={copyCode}>
             {room.code}
             {copied && (
-              <span style={{
-                fontSize: "0.8rem", color: "var(--green)", marginLeft: "0.75rem",
-              }}>
+              <span style={{ fontSize: "0.8rem", color: "var(--green)", marginLeft: "0.75rem" }}>
                 Copied!
               </span>
             )}
@@ -64,62 +72,45 @@ export default function UnoLobby({ room, myId, error, onLeave }) {
 
         <hr className="divider" />
 
-        {/* Player list */}
+        {/* Players + wins combined */}
         <div className="mb">
           <div className="label">Players ({connected.length} / 10)</div>
           <div className="stack-sm">
-            {players.map((p) => (
-              <div className="player-item" key={p.id}>
-                <span className="name">{p.name}</span>
-                <span className="row" style={{ gap: "0.4rem" }}>
-                  {p.id === room.hostId && <span className="badge badge-host">Host</span>}
-                  {p.id === myId        && <span className="badge badge-you">You</span>}
-                  {!p.isConnected && (
-                    <span className="badge" style={{
-                      background: "var(--surface3)",
-                      color: "var(--red)",
-                      border: "1px solid rgba(224,96,96,0.3)",
-                    }}>
-                      Offline
-                    </span>
-                  )}
-                </span>
-              </div>
-            ))}
+            {players.map((p) => {
+              const wins = room.scores?.[p.id] ?? 0;
+              return (
+                <div className="player-item" key={p.id}>
+                  <span className="name">{p.name}</span>
+                  <span className="row" style={{ gap: "0.4rem" }}>
+                    {hasAnyWins && (
+                      <span style={{
+                        fontSize: "0.75rem",
+                        fontWeight: 700,
+                        color: wins > 0 ? "var(--yellow)" : "var(--muted)",
+                      }}>
+                        {wins} {wins === 1 ? "win" : "wins"}
+                      </span>
+                    )}
+                    {p.id === room.hostId && <span className="badge badge-host">Host</span>}
+                    {p.id === myId        && <span className="badge badge-you">You</span>}
+                    {!p.isConnected && (
+                      <span className="badge" style={{
+                        background: "var(--surface3)",
+                        color: "var(--red)",
+                        border: "1px solid rgba(224,96,96,0.3)",
+                      }}>
+                        Offline
+                      </span>
+                    )}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </div>
 
-        {/* Cumulative scores (shown after at least one round) */}
-        {showScores && (
-          <>
-            <hr className="divider" />
-            <div className="mb">
-              <div className="label">Scores</div>
-              <div className="stack-sm">
-                {sortedScores.map((entry, i) => (
-                  <div className={`score-row${i === 0 ? " top" : ""}`} key={entry.id}>
-                    <span>
-                      {i === 0 && <span style={{ marginRight: "0.4rem" }}>🏆</span>}
-                      {entry.name}
-                      {entry.id === myId && (
-                        <span className="muted" style={{ fontSize: "0.75rem", marginLeft: "0.4rem" }}>
-                          (You)
-                        </span>
-                      )}
-                    </span>
-                    <span style={{ fontWeight: 700, color: "var(--yellow)" }}>
-                      {entry.score} pts
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </>
-        )}
-
         {error && <p className="error-text mt-sm">{error}</p>}
 
-        {/* Start / waiting */}
         {isHost ? (
           <button
             className="btn-primary"
@@ -127,7 +118,7 @@ export default function UnoLobby({ room, myId, error, onLeave }) {
             disabled={connected.length < 2}
             style={{ marginTop: "0.5rem" }}
           >
-            {connected.length < 2 ? "Waiting for players..." : "Start UNO"}
+            {connected.length < 2 ? "Waiting for players..." : "Start Game"}
           </button>
         ) : (
           <p className="muted center-text mt">Waiting for the host to start...</p>

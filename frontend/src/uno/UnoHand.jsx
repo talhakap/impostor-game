@@ -3,17 +3,21 @@ import UnoCard from "./UnoCard";
 
 // Client-side playability mirror — cosmetic only.
 // The server always re-validates before accepting a play.
-function isCardPlayable(card, topCard, currentColor, pendingDrawCount, drawnCardId, chainValue) {
-  // If a card was drawn this turn, only that card is playable
+function isCardPlayable(card, topCard, currentColor, pendingDrawCount, pendingDrawType, drawnCardId, chainValue, chainType) {
   if (drawnCardId) return card.id === drawnCardId;
 
-  // If in same-value chain mode, only matching numbers or wilds are playable
+  // Number chain — only matching value or wild
   if (chainValue !== null) {
     return card.color === "wild" || (card.type === "number" && card.value === chainValue);
   }
 
+  // Action chain — only same type
+  if (chainType !== null) return card.type === chainType;
+
+  // Draw stack — only matching draw type
+  if (pendingDrawCount > 0) return card.type === pendingDrawType;
+
   // Normal rules
-  if (pendingDrawCount > 0) return false;
   if (card.color === "wild") return true;
   if (card.color === currentColor) return true;
   if (topCard && topCard.type !== "number" && card.type === topCard.type) return true;
@@ -27,8 +31,10 @@ export default function UnoHand({
   topCard,
   currentColor,
   pendingDrawCount,
+  pendingDrawType,
   drawnCardId,
   chainValue,
+  chainType,
   onPlayCard,
 }) {
   if (!hand || hand.length === 0) {
@@ -55,7 +61,7 @@ export default function UnoHand({
     }}>
       {hand.map((card) => {
         const playable = isMyTurn
-          ? isCardPlayable(card, topCard, currentColor, pendingDrawCount, drawnCardId, chainValue)
+          ? isCardPlayable(card, topCard, currentColor, pendingDrawCount, pendingDrawType, drawnCardId, chainValue, chainType)
           : false;
 
         return (

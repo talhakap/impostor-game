@@ -21,10 +21,77 @@ const io = new Server(server, {
 const rooms          = {};
 const socketToRoom   = {};
 const activeTimers   = {};
-// Grace period timers: socketId → setTimeout handle.
-// When a player disconnects we wait GRACE_MS before treating it as permanent.
+// Grace period timers for Impostor rooms only: socketId → setTimeout handle.
 const disconnectTimers = {};
-const GRACE_MS = 60_000; // 60 seconds — covers mobile tab suspension
+const GRACE_MS = 60_000; // 60 seconds — covers mobile tab suspension (Impostor only)
+
+// ─── UNO round-end helper ─────────────────────────────────────────────────────
+// Called whenever a round finishes. Awards 1 win, resets play state, and sends
+// everyone straight back to the lobby so wins are visible immediately.
+function endUnoRound(room, winnerId) {
+  if (winnerId) {
+    room.scores[winnerId] = (room.scores[winnerId] || 0) + 1;
+    room.lastRoundWinnerId = winnerId;
+  }
+  // Keep turnOrder so seat positions stay consistent next game.
+  // start_game will rotate it instead of re-randomising.
+  room.phase            = "uno_lobby";
+  room.hands            = null;
+  room.drawPile         = null;
+  room.discardPile      = null;
+  room.currentColor     = null;
+  room.direction        = 1;
+  room.currentTurnIndex = 0;
+  room.pendingDrawCount = 0;
+  room.pendingDrawType  = null;
+  room.saidUno          = {};
+  room.roundWinnerId    = winnerId ?? null;
+  room.drawnCardId      = null;
+  room.chainValue       = null;
+  room.chainType        = null;
+  room.chainCount       = 0;
+}
+
+// ─── UNO player removal helper ────────────────────────────────────────────────
+// Removes a player from the active UNO game state (turnOrder, hands, chain).
+// Does NOT touch room.players or room.scores — callers handle that.
+function removePlayerFromUno(room, playerId) {
+  if (!room.hands) return; // not in play phase
+  const wasTheirTurn = uno.getCurrentPlayerId(room) === playerId;
+  const idx = room.turnOrder.indexOf(playerId);
+
+  if (wasTheirTurn) {
+    room.drawnCardId      = null;
+    room.chainValue       = null;
+    room.chainType        = null;
+    room.chainCount       = 0;
+    room.pendingDrawCount = 0;
+    room.pendingDrawType  = null;
+  }
+
+  if (idx !== -1) {
+    room.turnOrder.splice(idx, 1);
+    if (room.turnOrder.length === 0) {
+      // Everyone left — end the round with no winner
+      endUnoRound(room, null);
+      return;
+    } else if (wasTheirTurn) {
+      room.currentTurnIndex = idx % room.turnOrder.length;
+    } else if (idx < room.currentTurnIndex) {
+      room.currentTurnIndex = Math.max(0, room.currentTurnIndex - 1);
+    } else {
+      room.currentTurnIndex = Math.min(room.currentTurnIndex, room.turnOrder.length - 1);
+    }
+  }
+
+  delete room.hands[playerId];
+  if (room.saidUno) delete room.saidUno[playerId];
+
+  // Auto-win if only one player left
+  if (room.turnOrder.length === 1 && room.phase === "uno_playing") {
+    endUnoRound(room, room.turnOrder[0]);
+  }
+}
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -326,11 +393,14 @@ io.on("connection", (socket) => {
         direction:        1,
         currentTurnIndex: 0,
         pendingDrawCount: 0,
+        pendingDrawType:  null,
         saidUno:          {},
         roundWinnerId:    null,
         gameWinnerId:     null,
         drawnCardId:      null,
         chainValue:       null,
+        chainType:        null,
+        chainCount:       0,
       };
     } else {
       rooms[code] = {
@@ -424,11 +494,20 @@ io.on("connection", (socket) => {
   socket.on("host:kick_player", ({ playerId }) => {
     const code = socketToRoom[socket.id];
     const room = rooms[code];
-    if (!room || room.hostId !== socket.id || room.phase !== "lobby") return;
+    if (!room || room.hostId !== socket.id) return;
     if (playerId === socket.id || !room.players[playerId]) return;
+
     io.to(playerId).emit("kicked");
     delete room.players[playerId];
     if (socketToRoom[playerId] === code) delete socketToRoom[playerId];
+
+    // UNO: also clean up game state
+    if (room.gameType === "uno") {
+      delete room.scores[playerId];
+      if (room.phase === "uno_playing") removePlayerFromUno(room, playerId);
+      else if (room.hands) { delete room.hands[playerId]; delete room.saidUno?.[playerId]; }
+    }
+
     broadcastRoom(code);
   });
 
@@ -539,8 +618,16 @@ io.on("connection", (socket) => {
     const connected = getConnectedPlayers(room);
     if (connected.length < 2) return socket.emit("error", { message: "Need at least 2 players to start" });
 
-    // Randomise turn order
-    room.turnOrder = connected.map((p) => p.id).sort(() => Math.random() - 0.5);
+    const connectedIds = connected.map((p) => p.id);
+    const prev = room.turnOrder ?? [];
+    // If the exact same set of players is in the previous turn order, rotate
+    // by one so seat positions stay consistent across rounds.
+    if (prev.length === connectedIds.length && connectedIds.every((id) => prev.includes(id))) {
+      room.turnOrder = [...prev.slice(1), prev[0]];
+    } else {
+      // New players or first game — randomise
+      room.turnOrder = connectedIds.sort(() => Math.random() - 0.5);
+    }
     for (const pid of room.turnOrder) {
       if (!(pid in room.scores)) room.scores[pid] = 0;
     }
@@ -574,15 +661,20 @@ io.on("connection", (socket) => {
     if (room.drawnCardId && cardId !== room.drawnCardId)
       return socket.emit("error", { message: "You must play the drawn card or pass your turn" });
 
-    // If in chain mode, only same-value number cards or wilds are allowed
+    // Chain validation
     if (room.chainValue !== null) {
+      // Number chain — must match value or be wild
       const isChainable = card.color === "wild" ||
         (card.type === "number" && card.value === room.chainValue);
       if (!isChainable)
         return socket.emit("error", { message: "End your turn or play a matching number" });
+    } else if (room.chainType !== null) {
+      // Action chain — must be same type
+      if (card.type !== room.chainType)
+        return socket.emit("error", { message: `Play another ${room.chainType} or pass` });
     } else {
-      // Normal validation (not in chain mode)
-      if (!uno.isValidPlay(card, topCard, room.currentColor, room.pendingDrawCount))
+      // Normal validation (includes draw-stack restriction)
+      if (!uno.isValidPlay(card, topCard, room.currentColor, room.pendingDrawCount, room.pendingDrawType))
         return socket.emit("error", { message: "That card cannot be played right now" });
     }
 
@@ -601,33 +693,76 @@ io.on("connection", (socket) => {
     // Win condition
     if (hand.length === 0) {
       room.chainValue = null;
-      room.roundWinnerId = socket.id;
-      const otherHands = {};
-      for (const pid of room.turnOrder) {
-        if (pid !== socket.id) otherHands[pid] = room.hands[pid];
-      }
-      room.scores[socket.id] = (room.scores[socket.id] || 0) + uno.calculateRoundScore(otherHands);
-      room.phase = "uno_round_over";
+      room.chainType  = null;
+      room.chainCount = 0;
+      endUnoRound(room, socket.id);
       broadcastRoom(code);
       return;
     }
 
-    // ── Same-value chain logic ────────────────────────────────────────────
-    // After playing a number card, if the player still holds cards of the
-    // same value they stay on their turn and can chain them.
+    // ── Number chain ──────────────────────────────────────────────────────
     if (card.type === "number") {
       const hasMoreSameValue = hand.some((c) => c.type === "number" && c.value === card.value);
       if (hasMoreSameValue) {
         room.chainValue   = card.value;
-        room.currentColor = card.color; // update active colour without advancing turn
+        room.currentColor = card.color;
         broadcastRoom(code);
         return;
       }
+      // Chain done — fall through to applyCardEffect
+      room.chainValue = null;
+      uno.applyCardEffect(room, card, null);
+      broadcastRoom(code);
+      return;
     }
 
-    // No chain continuation: clear chain state and apply normal card effect
+    // ── Skip chain ────────────────────────────────────────────────────────
+    // Each skip skips one additional player. Accumulate until no more skips
+    // in hand (or player passes). Effect applied at end of chain.
+    if (card.type === "skip") {
+      room.currentColor = card.color;
+      room.chainType    = "skip";
+      room.chainCount   = (room.chainCount || 0) + 1;
+      if (hand.some((c) => c.type === "skip")) {
+        broadcastRoom(code);
+        return;
+      }
+      // No more skips — apply: advance by (chainCount + 1) to skip chainCount players
+      const skips = room.chainCount;
+      room.chainType  = null;
+      room.chainCount = 0;
+      uno.advanceTurn(room, skips + 1);
+      broadcastRoom(code);
+      return;
+    }
+
+    // ── Reverse chain ─────────────────────────────────────────────────────
+    // Each reverse immediately flips direction so the arrow updates live.
+    // At chain end, advance 1 in whatever the final direction is.
+    if (card.type === "reverse") {
+      room.currentColor = card.color;
+      room.direction   *= -1; // flip immediately — visible to all clients
+      room.chainType    = "reverse";
+      room.chainCount   = (room.chainCount || 0) + 1;
+      if (room.turnOrder.length === 2 || !hand.some((c) => c.type === "reverse")) {
+        // 2-player: each reverse is a skip, so apply immediately rather than chain
+        // Any player count: no more reverses — apply final advance
+        const count     = room.chainCount;
+        room.chainType  = null;
+        room.chainCount = 0;
+        const twoPlayer = room.turnOrder.length === 2;
+        // 2-player: odd count = go again (advance 2), even = normal advance 1
+        uno.advanceTurn(room, twoPlayer && count % 2 === 1 ? 2 : 1);
+      }
+      broadcastRoom(code);
+      return;
+    }
+
+    // ── Wild / draw cards — apply effect normally ─────────────────────────
     room.chainValue = null;
-    uno.applyCardEffect(room, card, chosenColor);
+    room.chainType  = null;
+    room.chainCount = 0;
+    uno.applyCardEffect(room, card, chosenColor ?? null);
     broadcastRoom(code);
   });
 
@@ -648,14 +783,28 @@ io.on("connection", (socket) => {
       return socket.emit("error", { message: "Play the drawn card or pass your turn" });
     if (room.chainValue !== null)
       return socket.emit("error", { message: "End your turn or play a matching number" });
+    if (room.chainType !== null)
+      return socket.emit("error", { message: "Play another card or pass your turn" });
 
+    // ── Active draw stack: player must draw the full accumulated penalty ──────
+    if (room.pendingDrawCount > 0) {
+      uno.drawCards(room, socket.id, room.pendingDrawCount);
+      room.saidUno[socket.id] = false;
+      room.pendingDrawCount   = 0;
+      room.pendingDrawType    = null;
+      uno.advanceTurn(room, 1);
+      broadcastRoom(code);
+      return;
+    }
+
+    // ── Normal single draw ────────────────────────────────────────────────────
     uno.drawCards(room, socket.id, 1);
     room.saidUno[socket.id] = false;
 
     const drawnCard = room.hands[socket.id][room.hands[socket.id].length - 1];
     const topCard   = room.discardPile[room.discardPile.length - 1];
 
-    if (uno.isValidPlay(drawnCard, topCard, room.currentColor, room.pendingDrawCount)) {
+    if (uno.isValidPlay(drawnCard, topCard, room.currentColor, 0, null)) {
       // Playable — stay on turn, highlight this card only
       room.drawnCardId = drawnCard.id;
     } else {
@@ -677,12 +826,26 @@ io.on("connection", (socket) => {
     if (uno.getCurrentPlayerId(room) !== socket.id)
       return socket.emit("error", { message: "It's not your turn" });
 
-    if (!room.drawnCardId && room.chainValue === null)
+    if (!room.drawnCardId && room.chainValue === null && room.chainType === null)
       return socket.emit("error", { message: "Nothing to pass" });
 
-    room.drawnCardId = null;
-    room.chainValue  = null;
-    uno.advanceTurn(room, 1);
+    if (room.chainType === "skip") {
+      const skips     = room.chainCount;
+      room.chainType  = null;
+      room.chainCount = 0;
+      uno.advanceTurn(room, skips + 1);
+    } else if (room.chainType === "reverse") {
+      // Direction already flipped incrementally; just advance
+      const count     = room.chainCount;
+      room.chainType  = null;
+      room.chainCount = 0;
+      const twoPlayer = room.turnOrder.length === 2;
+      uno.advanceTurn(room, twoPlayer && count % 2 === 1 ? 2 : 1);
+    } else {
+      room.drawnCardId = null;
+      room.chainValue  = null;
+      uno.advanceTurn(room, 1);
+    }
     broadcastRoom(code);
   });
 
@@ -713,48 +876,6 @@ io.on("connection", (socket) => {
     broadcastRoom(code);
   });
 
-  // ── UNO: next round ────────────────────────────────────────────────────────
-
-  socket.on("uno:next_round", () => {
-    const code = socketToRoom[socket.id];
-    const room = rooms[code];
-    if (!room || room.gameType !== "uno" || room.hostId !== socket.id) return;
-    if (room.phase !== "uno_round_over") return;
-
-    room.roundNumber++;
-    // Rotate the starting player so a different player leads each round
-    room.turnOrder = [...room.turnOrder.slice(1), room.turnOrder[0]];
-    room.phase = "uno_playing";
-    uno.dealCards(room);
-    broadcastRoom(code);
-  });
-
-  // ── UNO: back to lobby (play again) ───────────────────────────────────────
-
-  socket.on("uno:play_again", () => {
-    const code = socketToRoom[socket.id];
-    const room = rooms[code];
-    if (!room || room.gameType !== "uno" || room.hostId !== socket.id) return;
-    if (room.phase !== "uno_round_over") return;
-
-    room.phase        = "uno_lobby";
-    room.roundNumber  = 1;
-    room.scores       = {};
-    for (const pid of Object.keys(room.players)) room.scores[pid] = 0;
-    room.hands        = null;
-    room.drawPile     = null;
-    room.discardPile  = null;
-    room.turnOrder    = [];
-    room.currentColor = null;
-    room.direction    = 1;
-    room.currentTurnIndex = 0;
-    room.pendingDrawCount = 0;
-    room.saidUno      = {};
-    room.roundWinnerId = null;
-    room.drawnCardId  = null;
-    room.chainValue   = null;
-    broadcastRoom(code);
-  });
 
   // ── Rejoin (player returning after tab-switch / mobile suspend) ───────────
 
@@ -856,16 +977,32 @@ io.on("connection", (socket) => {
     const player = room.players[socket.id];
     if (!player) return;
 
-    // Mark offline immediately so the UI shows them as disconnected
-    player.isConnected = false;
     delete socketToRoom[socket.id];
+
+    // ── UNO: kick immediately, no grace period ────────────────────────────
+    if (room.gameType === "uno") {
+      delete room.players[socket.id];
+      delete room.scores[socket.id];
+
+      const remaining = getConnectedPlayers(room);
+      if (remaining.length === 0) { delete rooms[code]; return; }
+
+      if (room.hostId === socket.id) room.hostId = remaining[0].id;
+
+      if (room.phase === "uno_playing") removePlayerFromUno(room, socket.id);
+      else if (room.hands) { delete room.hands[socket.id]; delete room.saidUno?.[socket.id]; }
+
+      broadcastRoom(code);
+      return;
+    }
+
+    // ── Impostor: mark offline + start grace period ───────────────────────
+    player.isConnected = false;
     broadcastRoom(code);
 
-    // ── Grace period: wait GRACE_MS before treating as permanent ──────────
     disconnectTimers[socket.id] = setTimeout(() => {
       delete disconnectTimers[socket.id];
 
-      // Re-fetch in case room was deleted while we waited
       const r = rooms[code];
       if (!r || !r.players[socket.id]) return;
 
@@ -876,22 +1013,13 @@ io.on("connection", (socket) => {
         return;
       }
 
-      // Transfer host
       if (r.hostId === socket.id) {
         const nextHost = stillConnected.find((p) => !p.isEliminated) || stillConnected[0];
         r.hostId = nextHost.id;
       }
 
-      // UNO: skip their turn if it's currently theirs
-      if (r.gameType === "uno" && r.phase === "uno_playing") {
-        if (uno.getCurrentPlayerId(r) === socket.id) {
-          uno.advanceTurn(r, 1);
-        }
-      }
-
       broadcastRoom(code);
 
-      // Impostor: re-check completion conditions
       if (r.phase === "answering" || r.phase === "tiebreaker_answering") checkAllSubmitted(code);
       if (r.phase === "voting"    || r.phase === "tiebreaker_voting")    checkAllVoted(code);
     }, GRACE_MS);
