@@ -1,21 +1,14 @@
 import React, { useState, useEffect, useRef } from "react";
 import { socket } from "../socket";
 
-export default function UnoLobby({ room, myId, error, onLeave }) {
-  const [copied,   setCopied]   = useState(false);
-  const [messages, setMessages] = useState([]);
-  const [draft,    setDraft]    = useState("");
-  const bottomRef               = useRef(null);
-
-  useEffect(() => {
-    const handler = (msg) => setMessages((prev) => [...prev.slice(-199), msg]);
-    socket.on("uno:chat", handler);
-    return () => socket.off("uno:chat", handler);
-  }, []);
+export default function UnoLobby({ room, myId, error, onLeave, chatMessages }) {
+  const [copied, setCopied] = useState(false);
+  const [draft,  setDraft]  = useState("");
+  const bottomRef           = useRef(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [chatMessages]);
 
   const sendChat = () => {
     const trimmed = draft.trim();
@@ -159,10 +152,10 @@ export default function UnoLobby({ room, myId, error, onLeave }) {
             marginBottom: "0.6rem",
             scrollbarWidth: "thin", scrollbarColor: "var(--border) transparent",
           }}>
-            {messages.length === 0 && (
+            {chatMessages.length === 0 && (
               <p style={{ color: "var(--muted)", fontSize: "0.8rem" }}>No messages yet</p>
             )}
-            {messages.map((m, i) => {
+            {chatMessages.map((m, i) => {
               const isMe = m.playerId === myId;
               return (
                 <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: isMe ? "flex-end" : "flex-start" }}>

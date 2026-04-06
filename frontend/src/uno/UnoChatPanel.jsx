@@ -1,19 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
 import { socket } from "../socket";
 
-export default function UnoChatPanel({ myId, players, onClose }) {
-  const [messages, setMessages] = useState([]);
-  const [draft, setDraft]       = useState("");
-  const bottomRef               = useRef(null);
-  const inputRef                = useRef(null);
-
-  useEffect(() => {
-    const handler = (msg) => {
-      setMessages((prev) => [...prev.slice(-199), msg]);
-    };
-    socket.on("uno:chat", handler);
-    return () => socket.off("uno:chat", handler);
-  }, []);
+export default function UnoChatPanel({ myId, players, messages, onClose }) {
+  const [draft, setDraft] = useState("");
+  const bottomRef         = useRef(null);
+  const inputRef          = useRef(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });

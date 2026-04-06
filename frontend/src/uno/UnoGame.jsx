@@ -7,7 +7,7 @@ import UnoDiscardPile  from "./UnoDiscardPile";
 import UnoDrawPile     from "./UnoDrawPile";
 import UnoChatPanel    from "./UnoChatPanel";
 
-export default function UnoGame({ room, myId, error, clearError }) {
+export default function UnoGame({ room, myId, error, clearError, chatMessages }) {
   const [pendingWild, setPendingWild] = useState(null);
   const [localError,  setLocalError]  = useState(null);
   const [chatOpen,    setChatOpen]    = useState(false);
@@ -44,9 +44,14 @@ export default function UnoGame({ room, myId, error, clearError }) {
   }, [isMyTurn, pendingDrawCount, pendingDrawType, hand]); // eslint-disable-line
 
   // ── Chat bubbles + unread counter ──────────────────────────────────────────
+  // React to new messages arriving in the shared chatMessages array
 
+  const prevLenRef = React.useRef(0);
   useEffect(() => {
-    const handler = (msg) => {
+    const newMessages = chatMessages.slice(prevLenRef.current);
+    prevLenRef.current = chatMessages.length;
+
+    newMessages.forEach((msg) => {
       if (!chatOpen) setUnreadCount((n) => n + 1);
 
       // Show bubble beside player chip for 5 seconds
@@ -60,10 +65,8 @@ export default function UnoGame({ room, myId, error, clearError }) {
         });
         delete bubbleTimers.current[msg.playerId];
       }, 5000);
-    };
-    socket.on("uno:chat", handler);
-    return () => socket.off("uno:chat", handler);
-  }, [chatOpen]);
+    });
+  }, [chatMessages]); // eslint-disable-line
 
   // ── Auto-clear errors ───────────────────────────────────────────────────────
 
@@ -382,6 +385,7 @@ export default function UnoGame({ room, myId, error, clearError }) {
         <UnoChatPanel
           myId={myId}
           players={room.players}
+          messages={chatMessages}
           onClose={() => setChatOpen(false)}
         />
       )}
